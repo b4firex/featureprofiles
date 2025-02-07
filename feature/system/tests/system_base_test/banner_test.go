@@ -17,8 +17,10 @@
 package system_base_test
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/openconfig/featureprofiles/internal/deviations"
 	"github.com/openconfig/ondatra"
 	"github.com/openconfig/ondatra/gnmi"
 )
@@ -29,38 +31,58 @@ import (
 // config_path:/system/config/motd-banner
 // telemetry_path:/system/state/motd-banner
 func TestMotdBanner(t *testing.T) {
-	t.Skip("Need working implementation to validate against")
-
+	dut := ondatra.DUT(t, "dut")
 	testCases := []struct {
 		description string
 		banner      string
 	}{
-		{"Empty String", ""},
-		{"Single Character", "x"},
-		{"Short String", "Warning Text"},
-		{"Long String", "WARNING : Unauthorized access to this system is forbidden and will be prosecuted by law. By accessing this system, you agree that your actions may be monitored if unauthorized usage is suspected."},
+		{"Empty String", deviations.BannerDelimiter(dut) + "" + deviations.BannerDelimiter(dut)},
+		{"Single Character", deviations.BannerDelimiter(dut) + "x" + deviations.BannerDelimiter(dut)},
+		{"Short String", deviations.BannerDelimiter(dut) + "Warning Text" + deviations.BannerDelimiter(dut)},
+		{"Long String", deviations.BannerDelimiter(dut) + "WARNING : Unauthorized access to this system is forbidden and will be prosecuted by law. By accessing this system, you agree that your actions may be monitored if unauthorized usage is suspected." + deviations.BannerDelimiter(dut)},
 	}
-
-	dut := ondatra.DUT(t, "dut")
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
 			config := gnmi.OC().System().MotdBanner()
 			state := gnmi.OC().System().MotdBanner()
-
 			gnmi.Replace(t, dut, config.Config(), testCase.banner)
 
 			t.Run("Get MOTD Config", func(t *testing.T) {
-				configGot := gnmi.Get(t, dut, config.Config())
-				if configGot != testCase.banner {
-					t.Errorf("Config MOTD Banner: got %s, want %s", configGot, testCase.banner)
+
+				if testCase.description == "Empty String" {
+					if dut.Vendor() != ondatra.CISCO {
+						if gnmi.LookupConfig(t, dut, config.Config()).IsPresent() {
+							t.Errorf("MOTD Banner not empty")
+						} else {
+							t.Logf("No response for the path is expected as the config is empty")
+						}
+					}
+				} else {
+					configGot := gnmi.Get(t, dut, config.Config())
+					configGot = strings.TrimSpace(configGot)
+					if configGot != testCase.banner {
+						t.Errorf("Config MOTD Banner: got %s, want %s", configGot, testCase.banner)
+					}
 				}
 			})
 
 			t.Run("Get MOTD Telemetry", func(t *testing.T) {
-				stateGot := gnmi.Get(t, dut, state.Config())
-				if stateGot != testCase.banner {
-					t.Errorf("Telemetry MOTD Banner: got %v, want %s", stateGot, testCase.banner)
+				if testCase.description == "Empty String" {
+					if dut.Vendor() != ondatra.CISCO {
+						if gnmi.LookupConfig(t, dut, config.Config()).IsPresent() {
+							t.Errorf("MOTD Telemetry Banner not empty")
+						} else {
+							t.Logf("No response for the path is expected as the config is empty")
+						}
+					}
+				} else {
+					stateGot := gnmi.Get(t, dut, state.State())
+					stateGot = strings.TrimSpace(stateGot)
+					stateGot = deviations.BannerDelimiter(dut) + stateGot + deviations.BannerDelimiter(dut)
+					if stateGot != testCase.banner {
+						t.Errorf("Telemetry MOTD Banner: got %v, want %s", stateGot, testCase.banner)
+					}
 				}
 			})
 
@@ -80,41 +102,64 @@ func TestMotdBanner(t *testing.T) {
 // config_path:/system/config/login-banner
 // telemetry_path:/system/state/login-banner
 func TestLoginBanner(t *testing.T) {
-	t.Skip("Need working implementation to validate against")
-
+	dut := ondatra.DUT(t, "dut")
 	testCases := []struct {
 		description string
 		banner      string
 	}{
-		{"Empty String", ""},
-		{"Single Character", "x"},
-		{"Short String", "Warning Text"},
-		{"Long String", "WARNING : Unauthorized access to this system is forbidden and will be prosecuted by law. By accessing this system, you agree that your actions may be monitored if unauthorized usage is suspected."},
+		{"Empty String", deviations.BannerDelimiter(dut) + "" + deviations.BannerDelimiter(dut)},
+		{"Single Character", deviations.BannerDelimiter(dut) + "x" + deviations.BannerDelimiter(dut)},
+		{"Short String", deviations.BannerDelimiter(dut) + "Warning Text" + deviations.BannerDelimiter(dut)},
+		{"Long String", deviations.BannerDelimiter(dut) + "WARNING : Unauthorized access to this system is forbidden and will be prosecuted by law. By accessing this system, you agree that your actions may be monitored if unauthorized usage is suspected." + deviations.BannerDelimiter(dut)},
 	}
-
-	dut := ondatra.DUT(t, "dut")
-
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
 			config := gnmi.OC().System().LoginBanner()
 			state := gnmi.OC().System().LoginBanner()
-
 			gnmi.Replace(t, dut, config.Config(), testCase.banner)
 
-			configGot := gnmi.Get(t, dut, config.Config())
-			if configGot != testCase.banner {
-				t.Errorf("Config Login Banner: got %s, want %s", configGot, testCase.banner)
-			}
+			t.Run("Get Login Banner Config", func(t *testing.T) {
+				if testCase.description == "Empty String" {
+					if dut.Vendor() != ondatra.CISCO {
+						if gnmi.LookupConfig(t, dut, config.Config()).IsPresent() {
+							t.Errorf("Config Login Banner not empty")
+						} else {
+							t.Logf("No response for the path expected is expected as the config is empty")
+						}
+					}
+				} else {
+					configGot := gnmi.Get(t, dut, config.Config())
+					configGot = strings.TrimSpace(configGot)
+					if configGot != testCase.banner {
+						t.Errorf("Config Login Banner: got %s, want %s", configGot, testCase.banner)
+					}
+				}
+			})
 
-			stateGot := gnmi.Get(t, dut, state.Config())
-			if stateGot != testCase.banner {
-				t.Errorf("Telemetry Login Banner: got %v, want %s", stateGot, testCase.banner)
-			}
-
-			gnmi.Delete(t, dut, config.Config())
-			if qs := gnmi.LookupConfig(t, dut, config.Config()); qs.IsPresent() == true {
-				t.Errorf("Delete Login Banner fail: got %v", qs)
-			}
+			t.Run("Get Login Banner Telemetry", func(t *testing.T) {
+				if testCase.description == "Empty String" {
+					if dut.Vendor() != ondatra.CISCO {
+						if gnmi.LookupConfig(t, dut, config.Config()).IsPresent() {
+							t.Errorf("Telemetry Login Banner not empty")
+						} else {
+							t.Logf("No response for the path is expected as the config is empty")
+						}
+					}
+				} else {
+					stateGot := gnmi.Get(t, dut, state.State())
+					stateGot = strings.TrimSpace(stateGot)
+					stateGot = deviations.BannerDelimiter(dut) + stateGot + deviations.BannerDelimiter(dut)
+					if stateGot != testCase.banner {
+						t.Errorf("Telemetry Login Banner: got %v, want %s", stateGot, testCase.banner)
+					}
+				}
+			})
+			t.Run("Delete Login Banner", func(t *testing.T) {
+				gnmi.Delete(t, dut, config.Config())
+				if qs := gnmi.LookupConfig(t, dut, config.Config()); qs.IsPresent() == true {
+					t.Errorf("Delete Login Banner fail: got %v", qs)
+				}
+			})
 		})
 	}
 }
