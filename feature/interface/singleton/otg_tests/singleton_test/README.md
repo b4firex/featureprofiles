@@ -48,6 +48,9 @@ a new testbed configuration with the desired port types.
             captured in the OC path.
   * Verify that the traffic flow from ATE port-1 to ATE port-2 is
             now working after the interface is back up.
+### RT-5.1.3 - Verify accurate reporting of `hardware-port` on all interfaces:
+* Get an inventory of all the physical interfaces on the DUT using `GET /interfaces/interface/`
+* For every interface, verify `interfaces/interface/state/hardware-port` is populated with a reference to `/components/component/name`
 
 ### RT-5.1.3 [TODO: https://github.com/openconfig/featureprofiles/issues/2320]
 ####  Subscribe to interface counters with SAMPLE mode:
@@ -159,6 +162,7 @@ a new testbed configuration with the desired port types.
 * /interfaces/interface/state/id
 * /interfaces/interface/state/counters/in-fcs-errors
 * /interfaces/interface/state/counters/carrier-transitions
+* /components/component/name
 
 ## Protocol/RPC Parameter Coverage
 
