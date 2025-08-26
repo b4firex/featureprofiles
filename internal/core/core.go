@@ -78,6 +78,8 @@ type checker struct {
 	prevCores coreFiles
 }
 
+const statTimeout = 1 * time.Second
+
 func newChecker(dut binding.DUT) (*checker, error) {
 	dutVendor := dut.Vendor()
 	// vendorCoreFilePath and vendorCoreProcName should be provided to fetch core file on dut.
@@ -233,30 +235,42 @@ func (c *checker) checkCores() (coreFiles, error) {
 	dutVendor := c.dut.Vendor()
 	corePath := vendorCoreFilePath[dutVendor]
 	fileMatch := vendorCoreFileNamePattern[dutVendor]
+
+	ctx, cancel := context.WithTimeout(context.Background(), statTimeout)
+	defer cancel()
+
 	in := &fpb.StatRequest{
 		Path: corePath,
 	}
-	validResponse, err := c.fileClient.Stat(context.Background(), in)
+	validResponse, err := c.fileClient.Stat(ctx, in)
 	if err != nil {
 		return nil, fmt.Errorf("DUT %q: %w", corePath, err)
 	}
 	cores := coreFiles{}
-	// Check cores creation time is greater than test start time.
+	startNS := uint64(c.startTime.UnixNano())
+
+	// Check core's creation time is greater than test start time.
 	for _, fileStatsInfo := range validResponse.GetStats() {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), statTimeout)
 		// Get the exact file.
 		in = &fpb.StatRequest{
 			Path: fileStatsInfo.GetPath(),
 		}
-		validResponse, err := c.fileClient.Stat(context.Background(), in)
+		subResp, err := c.fileClient.Stat(ctx2, in)
+		cancel2()
 		if err != nil {
 			return nil, fmt.Errorf("DUT %q: unable to stat file %q, %v", c.dut.Name(), fileStatsInfo.GetPath(), err)
 		}
-		for _, filesMatched := range validResponse.GetStats() {
+		for _, filesMatched := range subResp.GetStats() {
 			coreFileName := filesMatched.GetPath()
 			if fileMatch.MatchString(coreFileName) {
+				lastModified := filesMatched.GetLastModified()
+				if lastModified != 0 && lastModified < startNS {
+					continue // pre-existing core file; ignore
+				}
 				cores[coreFileName] = fileInfo{
 					Name:     coreFileName,
-					Modified: fileStatsInfo.GetLastModified(),
+					Modified: lastModified,
 				}
 			}
 		}
