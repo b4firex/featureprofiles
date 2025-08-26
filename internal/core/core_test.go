@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/openconfig/gnmi/errdiff"
@@ -490,4 +491,141 @@ DUT: dut1
 		})
 
 	}
+}
+
+// filters out pre-start cores
+func TestCheckCoresStartTimeFilter(t *testing.T) {
+	// Times in nanoseconds.
+	const (
+		oldNS = 50 * 1e9
+		newNS = 150 * 1e9
+	)
+	// 1) Directory listing (two entries)
+	// 2) Stat for first file (old)
+	// 3) Stat for second file (new)
+	statResponses := []any{
+		&fpb.StatResponse{
+			Stats: []*fpb.StatInfo{
+				{Path: "/var/core/core.old.tar.gz"},
+				{Path: "/var/core/core.new.tar.gz"},
+			},
+		},
+		&fpb.StatResponse{
+			Stats: []*fpb.StatInfo{
+				{Path: "/var/core/core.old.tar.gz", LastModified: oldNS},
+			},
+		},
+		&fpb.StatResponse{
+			Stats: []*fpb.StatInfo{
+				{Path: "/var/core/core.new.tar.gz", LastModified: newNS},
+			},
+		},
+	}
+
+	dut := &fakebind.DUT{
+		AbstractDUT: &binding.AbstractDUT{
+			Dims: &binding.Dims{
+				Name:   "dut1",
+				Vendor: opb.Device_ARISTA,
+			},
+		},
+		DialGNOIFn: func(context.Context, ...grpc.DialOption) (gnoigo.Clients, error) {
+			return &fakeGNOI{
+				fakeFileClient: &fakeFileClient{
+					statResponses: statResponses,
+				},
+			}, nil
+		},
+	}
+
+	c, err := newChecker(dut)
+	if err != nil {
+		t.Fatalf("newChecker failed: %v", err)
+	}
+	// Place startTime between oldNS (50s) and newNS (150s).
+	c.startTime = time.Unix(100, 0)
+
+	got, err := c.check()
+	if err != nil {
+		t.Fatalf("check failed: %v", err)
+	}
+	want := coreFiles{
+		"/var/core/core.new.tar.gz": {
+			Name:     "/var/core/core.new.tar.gz",
+			Modified: newNS,
+		},
+	}
+	if diff := diffCoreFiles(want, got); diff != "" {
+		t.Fatalf("unexpected delta (-want +got): %s", diff)
+	}
+}
+
+// keeps cores with LastModified == 0 (treated as unknown, not filtered).
+func TestCheckCoresZeroLastModifiedIncluded(t *testing.T) {
+	statResponses := []any{
+		&fpb.StatResponse{
+			Stats: []*fpb.StatInfo{
+				{Path: "/var/core/core.zero.tar.gz"},
+			},
+		},
+		&fpb.StatResponse{
+			Stats: []*fpb.StatInfo{
+				{Path: "/var/core/core.zero.tar.gz", LastModified: 0},
+			},
+		},
+	}
+
+	dut := &fakebind.DUT{
+		AbstractDUT: &binding.AbstractDUT{
+			Dims: &binding.Dims{
+				Name:   "dut1",
+				Vendor: opb.Device_ARISTA,
+			},
+		},
+		DialGNOIFn: func(context.Context, ...grpc.DialOption) (gnoigo.Clients, error) {
+			return &fakeGNOI{
+				fakeFileClient: &fakeFileClient{
+					statResponses: statResponses,
+				},
+			}, nil
+		},
+	}
+
+	c, err := newChecker(dut)
+	if err != nil {
+		t.Fatalf("newChecker failed: %v", err)
+	}
+	// Make start time far in the future; zero timestamp should still pass.
+	c.startTime = time.Unix(1_000_000, 0)
+
+	got, err := c.check()
+	if err != nil {
+		t.Fatalf("check failed: %v", err)
+	}
+	want := coreFiles{
+		"/var/core/core.zero.tar.gz": {
+			Name: "/var/core/core.zero.tar.gz",
+			// Modified remains 0.
+		},
+	}
+	if diff := diffCoreFiles(want, got); diff != "" {
+		t.Fatalf("unexpected delta (-want +got): %s", diff)
+	}
+}
+
+// Helper to compare coreFiles
+func diffCoreFiles(want, got coreFiles) string {
+	if len(want) != len(got) {
+		return "length mismatch"
+	}
+	for k, w := range want {
+		g, ok := got[k]
+		if !ok {
+			return "missing key " + k
+		}
+		if w.Name != g.Name || w.Modified != g.Modified {
+			return "mismatch for " + k
+		}
+	}
+	return ""
 }
