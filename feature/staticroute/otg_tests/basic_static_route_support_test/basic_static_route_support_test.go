@@ -53,6 +53,7 @@ const (
 
 var (
 	dutPort1 = attrs.Attributes{
+		Name:    "port1",
 		Desc:    "dutPort1",
 		IPv4:    "192.0.2.1",
 		IPv4Len: ipv4PrefixLen,
@@ -70,6 +71,7 @@ var (
 	}
 
 	dutPort2 = attrs.Attributes{
+		Name:    "port2",
 		Desc:    "dutPort2",
 		IPv4:    "192.0.2.5",
 		IPv4Len: ipv4PrefixLen,
@@ -87,6 +89,7 @@ var (
 	}
 
 	dutPort3 = attrs.Attributes{
+		Name:    "port3",
 		Desc:    "dutPort3",
 		IPv4:    "192.0.2.9",
 		IPv4Len: ipv4PrefixLen,
@@ -104,6 +107,7 @@ var (
 	}
 
 	dutPort4 = attrs.Attributes{
+		Name:    "port4",
 		Desc:    "dutPort4",
 		IPv4:    "192.0.2.13",
 		IPv4Len: ipv4PrefixLen,
@@ -245,8 +249,8 @@ func TestStaticRouteAddRemove(t *testing.T) {
 		NetworkInstance: deviations.DefaultNetworkInstance(dut),
 		Prefix:          prefix.cidr(t),
 		NextHops: map[string]oc.NetworkInstance_Protocol_Static_NextHop_NextHop_Union{
-			"0": oc.UnionString(atePort2.IPv4),
-			"1": oc.UnionString(atePort3.IPv4),
+			"0": oc.UnionString(atePort1.IPv4),
+			"1": oc.UnionString(atePort2.IPv4),
 		},
 	}
 	if _, err := cfgplugins.NewStaticRouteCfg(b, sV4, dut); err != nil {
@@ -279,8 +283,8 @@ func TestStaticRouteAddRemove(t *testing.T) {
 		NetworkInstance: deviations.DefaultNetworkInstance(dut),
 		Prefix:          prefix.cidr(t),
 		NextHops: map[string]oc.NetworkInstance_Protocol_Static_NextHop_NextHop_Union{
-			"0": oc.UnionString(atePort2.IPv4),
-			"1": oc.UnionString(atePort3.IPv4),
+			"0": oc.UnionString(atePort1.IPv4),
+			"1": oc.UnionString(atePort2.IPv4),
 		},
 	}
 	if _, err := cfgplugins.NewStaticRouteCfg(b, sV4, dut); err != nil {
