@@ -896,6 +896,13 @@ func (op containerOp) push(t testing.TB, dev gnmi.DeviceOrOpts, config *oc.Root,
 				gp.NumBreakouts = ygot.Uint8(*data.numPhysicalChannels + 1)
 				bmp := gnmi.OC().Component(port).Port().BreakoutMode()
 				gnmi.BatchReplace(batch, bmp.Config(), bmode)
+				// Also set Name for each breakout child port to satisfy leafref constraints
+				for i := 0; i < int(*data.numPhysicalChannels); i++ {
+					childPortName := fmt.Sprintf("%s/%d", port, i)
+					gnmi.Update(t, ondatra.DUT(t, "dut"), gnmi.OC().Component(childPortName).Config(), &oc.Component{
+						Name: ygot.String(childPortName),
+					})
+				}
 			}
 		}
 	}
