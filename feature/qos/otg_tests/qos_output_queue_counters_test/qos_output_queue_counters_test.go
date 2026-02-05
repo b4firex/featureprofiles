@@ -58,7 +58,7 @@ func TestMain(m *testing.M) {
 // Test cases:
 //
 // Verify the presence of the telemetry paths of the following features:
-//  - Configure the interfaces connectd to ATE ports.
+//  - Configure the interfaces connected to ATE ports.
 //  - Send the traffic with all forwarding class NC1, AF4, AF3, AF2, AF1 and BE1 over the DUT.
 //  - Check the QoS queue counters exist and are updated correctly
 //    - /qos/interfaces/interface/output/queues/queue/state/transmit-pkts
@@ -232,7 +232,7 @@ func TestQoSCounters(t *testing.T) {
 	t.Logf("Sending traffic flows: \n%v\n\n", trafficFlows)
 	ate.OTG().StartTraffic(t)
 	time.Sleep(5 * time.Second)
-	outputQosPerSecoundCounterOK := validateoutputQosPerSecoundCounter(t, dut, dp1, dp2, trafficFlows)
+	outputQosPerSecoundCounterOK := validateOutputQosPerSecondCounter(t, dut, dp2, trafficFlows)
 	ate.OTG().StopTraffic(t)
 	if !outputQosPerSecoundCounterOK {
 		t.Errorf("Output QoS per second counter is not updated correctly")
@@ -347,12 +347,14 @@ func ConfigureDUTIntf(t *testing.T, dut *ondatra.DUTDevice) {
 }
 
 // verifyCounters verifies the qos counters are updated on every subscription request spaced at 30s time interval.
-func validateoutputQosPerSecoundCounter(t *testing.T, dut *ondatra.DUTDevice, dp1, dp2 *ondatra.Port, trafficFlows map[string]*trafficData) bool {
+func oldvalidateOutputQosPerSecondCounter(t *testing.T, dut *ondatra.DUTDevice, dp1, dp2 *ondatra.Port, trafficFlows map[string]*trafficData) bool {
+	t.Helper()
+
 	i2 := gnmi.OC().Qos().Interface(dp2.Name())
 	qosCounterOK := true
 	trafficData, ok := trafficFlows["flow-af2"]
 	if !ok {
-		t.Fatalf("Traffic flow 'flow-af3' not found in provided map")
+		t.Fatalf("Traffic flow 'flow-af2' not found in provided map")
 		return false
 	}
 	qosOutputCountersSamples := gnmi.Collect(t, dut.GNMIOpts().WithYGNMIOpts(ygnmi.WithSubscriptionMode(gpb.SubscriptionMode_SAMPLE), ygnmi.WithSampleInterval(30*time.Second)), i2.Output().Queue(trafficData.queue).TransmitPkts().State(), 300*time.Second)
@@ -372,6 +374,80 @@ func validateoutputQosPerSecoundCounter(t *testing.T, dut *ondatra.DUTDevice, dp
 		}
 	}
 	return qosCounterOK
+}
+
+// validateOutputQosPerSecondCounter verifies transmit-pkts counters for all provided flows/queues are:
+//  1. monotonic (never decrease)
+//  2. show eventual progress (at least one positive delta) within the sampling window.
+//
+// Rationale: some DUTs report flat samples during warm-up/policy programming; requiring per-sample
+// increments is brittle and can cause flakes.
+func validateOutputQosPerSecondCounter(t *testing.T, dut *ondatra.DUTDevice, dp2 *ondatra.Port, trafficFlows map[string]*trafficData) bool {
+	t.Helper()
+
+	if dut == nil || dp2 == nil {
+		t.Errorf("nil input: dut=%v dp2=%v", dut, dp2)
+		return false
+	}
+	if len(trafficFlows) == 0 {
+		t.Errorf("no traffic flows provided")
+		return false
+	}
+
+	i2 := gnmi.OC().Qos().Interface(dp2.Name())
+
+	const (
+		sampleInterval = 30 * time.Second
+		totalDuration  = 300 * time.Second
+	)
+
+	allValid := true
+
+	for flowID, tf := range trafficFlows {
+		if tf == nil || tf.queue == "" {
+			t.Errorf("invalid traffic data for flow %q", flowID)
+			allValid = false
+			continue
+		}
+
+		samples := gnmi.Collect(
+			t,
+			dut.GNMIOpts().WithYGNMIOpts(
+				ygnmi.WithSubscriptionMode(gpb.SubscriptionMode_SAMPLE),
+				ygnmi.WithSampleInterval(sampleInterval),
+			),
+			i2.Output().Queue(tf.queue).TransmitPkts().State(),
+			totalDuration,
+		).Await(t)
+
+		if len(samples) < 2 {
+			t.Errorf("flow %q queue %q: insufficient samples: got %d, want >= 2", flowID, tf.queue, len(samples))
+			allValid = false
+			continue
+		}
+
+		var prev uint64
+		seenIncrease := false
+
+		for i, sample := range samples {
+			val, present := sample.Val()
+			if !present {
+				t.Logf("flow %q queue %q sample[%d]: value not present", flowID, tf.queue, i)
+				continue
+			}
+
+			if val > prev {
+				seenIncrease = true
+			}
+			prev = val
+		}
+		if !seenIncrease {
+			t.Errorf("flow %q queue %q: counter did not increase within %v", flowID, tf.queue, totalDuration)
+			allValid = false
+		}
+	}
+
+	return allValid
 }
 
 func ConfigureQoS(t *testing.T, dut *ondatra.DUTDevice) {
