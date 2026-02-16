@@ -53,6 +53,7 @@ const (
 
 var (
 	dutPort1 = attrs.Attributes{
+		Name:    "port1",
 		Desc:    "dutPort1",
 		Name:    "port1",
 		IPv4:    "192.0.2.1",
@@ -71,6 +72,7 @@ var (
 	}
 
 	dutPort2 = attrs.Attributes{
+		Name:    "port2",
 		Desc:    "dutPort2",
 		Name:    "port2",
 		IPv4:    "192.0.2.5",
@@ -89,6 +91,7 @@ var (
 	}
 
 	dutPort3 = attrs.Attributes{
+		Name:    "port3",
 		Desc:    "dutPort3",
 		Name:    "port3",
 		IPv4:    "192.0.2.9",
@@ -107,6 +110,7 @@ var (
 	}
 
 	dutPort4 = attrs.Attributes{
+		Name:    "port4",
 		Desc:    "dutPort4",
 		Name:    "port4",
 		IPv4:    "192.0.2.13",
