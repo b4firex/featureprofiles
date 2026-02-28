@@ -596,32 +596,32 @@ func (ss *AFTStreamSession) loggingFinal(t *testing.T) {
 	// 	}
 	// 	t.Log(b.String())
 	// }
-	if len(ss.missingPrefixes) > 0 {
-		filename, err := writeMissingPrefixes(t, ss.missingPrefixes, ss.Cache.target, ss.start)
-		if err != nil {
-			t.Errorf("%s error writing missing prefixes: %v", prefix, err)
-		} else {
-			t.Logf("%s Wrote missing prefixes to %s", prefix, filename)
-		}
-	}
-	if len(ss.failingNHPrefixes) > 0 {
-		filename, err := writeFailingNHPrefixes(t, ss.failingNHPrefixes, ss.Cache.target, ss.start)
-		if err != nil {
-			t.Errorf("%s error writing failing NH prefixes: %v", prefix, err)
-		} else {
-			t.Logf("%s Wrote failing NH prefixes to %s", prefix, filename)
-		}
-	}
-	if len(ss.notifications) > 0 {
-		// if (len(ss.missingPrefixes) > 0 || len(ss.failingNHPrefixes) > 0) && len(ss.notifications) > 0 {
-		filename, err := writeNotifications(t, ss.notifications, ss.Cache.target, ss.start)
-		if err != nil {
-			t.Errorf("%s error writing notifications: %v", prefix, err)
-		} else {
-			t.Logf("%s Wrote all received notifications to %s", prefix, filename)
-		}
-	}
-	ss.notifications = nil
+	// if len(ss.missingPrefixes) > 0 {
+	// 	filename, err := writeMissingPrefixes(t, ss.missingPrefixes, ss.Cache.target, ss.start)
+	// 	if err != nil {
+	// 		t.Errorf("%s error writing missing prefixes: %v", prefix, err)
+	// 	} else {
+	// 		t.Logf("%s Wrote missing prefixes to %s", prefix, filename)
+	// 	}
+	// }
+	// if len(ss.failingNHPrefixes) > 0 {
+	// 	filename, err := writeFailingNHPrefixes(t, ss.failingNHPrefixes, ss.Cache.target, ss.start)
+	// 	if err != nil {
+	// 		t.Errorf("%s error writing failing NH prefixes: %v", prefix, err)
+	// 	} else {
+	// 		t.Logf("%s Wrote failing NH prefixes to %s", prefix, filename)
+	// 	}
+	// }
+	// if len(ss.notifications) > 0 {
+	// 	// if (len(ss.missingPrefixes) > 0 || len(ss.failingNHPrefixes) > 0) && len(ss.notifications) > 0 {
+	// 	filename, err := writeNotifications(t, ss.notifications, ss.Cache.target, ss.start)
+	// 	if err != nil {
+	// 		t.Errorf("%s error writing notifications: %v", prefix, err)
+	// 	} else {
+	// 		t.Logf("%s Wrote all received notifications to %s", prefix, filename)
+	// 	}
+	// }
+	// ss.notifications = nil
 }
 
 // ListenUntil updates AFT with notifications from a gNMI client in streaming mode, and stops
@@ -665,7 +665,7 @@ func (ss *AFTStreamSession) listenUntil(ctx context.Context, t *testing.T, timeo
 				// Context cancellation can hit this code path from the stream sending a context cancellation error.
 				t.Fatalf("error from gNMI stream: %v", resp.err)
 			}
-			ss.notifications = append(ss.notifications, resp.notification)
+			//ss.notifications = append(ss.notifications, resp.notification)
 
 			for _, hook := range preUpdateHooks {
 				err := hook.NotificationFunc(ss.Cache, resp.notification)
@@ -1258,47 +1258,47 @@ func getTestLogPath(t *testing.T, filename string) string {
 	return filepath.Join(t.TempDir(), filename)
 }
 
-func writeMissingPrefixes(t *testing.T, missingPrefixes map[string]bool, target string, startTime time.Time) (string, error) {
-	path := getTestLogPath(t, fmt.Sprintf("%s_%d_%s", target, startTime.UnixNano(), missingPrefixesFile))
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	for p := range missingPrefixes {
-		if _, err := fmt.Fprintln(f, p); err != nil {
-			return "", err
-		}
-	}
-	return path, nil
-}
+// func writeMissingPrefixes(t *testing.T, missingPrefixes map[string]bool, target string, startTime time.Time) (string, error) {
+// 	path := getTestLogPath(t, fmt.Sprintf("%s_%d_%s", target, startTime.UnixNano(), missingPrefixesFile))
+// 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	defer f.Close()
+// 	for p := range missingPrefixes {
+// 		if _, err := fmt.Fprintln(f, p); err != nil {
+// 			return "", err
+// 		}
+// 	}
+// 	return path, nil
+// }
 
-func writeFailingNHPrefixes(t *testing.T, failingNHPrefixes map[string]bool, target string, startTime time.Time) (string, error) {
-	path := getTestLogPath(t, fmt.Sprintf("%s_%d_%s", target, startTime.UnixNano(), failingNHPrefixesFile))
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	for p := range failingNHPrefixes {
-		if _, err := fmt.Fprintln(f, p); err != nil {
-			return "", err
-		}
-	}
-	return path, nil
-}
+// func writeFailingNHPrefixes(t *testing.T, failingNHPrefixes map[string]bool, target string, startTime time.Time) (string, error) {
+// 	path := getTestLogPath(t, fmt.Sprintf("%s_%d_%s", target, startTime.UnixNano(), failingNHPrefixesFile))
+// 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	defer f.Close()
+// 	for p := range failingNHPrefixes {
+// 		if _, err := fmt.Fprintln(f, p); err != nil {
+// 			return "", err
+// 		}
+// 	}
+// 	return path, nil
+// }
 
-func writeNotifications(t *testing.T, notifications []*gnmipb.SubscribeResponse, target string, startTime time.Time) (string, error) {
-	path := getTestLogPath(t, fmt.Sprintf("%s_%d_%s", target, startTime.UnixNano(), notificationsFile))
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	for _, n := range notifications {
-		if _, err := fmt.Fprintln(f, n.String()); err != nil {
-			return "", err
-		}
-	}
-	return path, nil
-}
+// func writeNotifications(t *testing.T, notifications []*gnmipb.SubscribeResponse, target string, startTime time.Time) (string, error) {
+// 	path := getTestLogPath(t, fmt.Sprintf("%s_%d_%s", target, startTime.UnixNano(), notificationsFile))
+// 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	defer f.Close()
+// 	for _, n := range notifications {
+// 		if _, err := fmt.Fprintln(f, n.String()); err != nil {
+// 			return "", err
+// 		}
+// 	}
+// 	return path, nil
+// }
