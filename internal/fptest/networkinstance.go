@@ -27,6 +27,7 @@ import (
 
 // ConfigureDefaultNetworkInstance configures the default network instance name and type.
 func ConfigureDefaultNetworkInstance(t testing.TB, d *ondatra.DUTDevice) {
+	t.Helper()
 	defNiPath := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(d))
 	gnmi.Update(t, d, defNiPath.Config(), &oc.NetworkInstance{
 		Name: ygot.String(deviations.DefaultNetworkInstance(d)),

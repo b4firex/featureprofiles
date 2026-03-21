@@ -16,7 +16,6 @@ package urpf_nondefault_ni_test
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +54,6 @@ const (
 	GUEPolicyV4Name    = "GUE-Policy-V4"
 	GUEPolicyV6Name    = "GUE-Policy-V6"
 	GUEDstIPv4         = "198.50.100.1"
-	isDefaultVRF       = true
 )
 
 // IP addresses and prefixes
@@ -87,7 +85,6 @@ var (
 	prefix3LenV6      = 64
 
 	dstAddr          = []string{GUEDstIPv4}
-	defaultNIName    = strings.ToLower("DEFAULT")
 	staticRoutePfxV4 = "/24"
 	staticRoutePfxV6 = "/64"
 )
@@ -98,9 +95,9 @@ func TestMain(m *testing.M) {
 
 // configureDUT configures the DUT with interfaces, a non-default VRF, BGP, route policies for leaking and rejecting routes, and uRPF.
 func configureDUT(t *testing.T, dut *ondatra.DUTDevice) *gnmi.SetBatch {
-	t.Helper()
 	p1 := dut.Port(t, "port1")
 	p2 := dut.Port(t, "port2")
+	defaultNIName := deviations.DefaultNetworkInstance(dut)
 	intBatch := new(gnmi.SetBatch)
 	t.Logf("Configuring Interfaces")
 	configureDUTInterface(t, dut, intBatch, &dutPort1, p1, true)
@@ -110,21 +107,31 @@ func configureDUT(t *testing.T, dut *ondatra.DUTDevice) *gnmi.SetBatch {
 	t.Log("Configuring Hardware Init")
 	configureHardwareInit(t, dut)
 
-	cfgplugins.EnableDefaultNetworkInstanceBgp(t, dut, dutAS)
 	fptest.ConfigureDefaultNetworkInstance(t, dut)
+	cfgplugins.EnableDefaultNetworkInstanceBgp(t, dut, dutAS)
 
 	t.Log("Configuring Network Instances")
-	defaultNI := cfgplugins.ConfigureNetworkInstance(t, dut, defaultNIName, isDefaultVRF)
-	nonDefaultNI := cfgplugins.ConfigureNetworkInstance(t, dut, nonDefaultVRF, !isDefaultVRF)
+	defaultNI := cfgplugins.ConfigureNetworkInstance(t, dut, defaultNIName, true)
+	nonDefaultNI := cfgplugins.ConfigureNetworkInstance(t, dut, nonDefaultVRF, false)
+
 	cfgplugins.ConfigureBGPNeighbor(t, dut, nonDefaultNI, dutPort1.IPv4, atePort1.IPv4, dutAS, ateAS1, "IPv4", true)
 	cfgplugins.ConfigureBGPNeighbor(t, dut, nonDefaultNI, dutPort1.IPv4, atePort1.IPv6, dutAS, ateAS1, "IPv6", true)
-	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv4, dutAS, ateAS2, "IPv4", true)
-	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv6, dutAS, ateAS2, "IPv6", true)
-
 	cfgplugins.UpdateNetworkInstanceOnDut(t, dut, defaultNIName, defaultNI)
-	cfgplugins.UpdateNetworkInstanceOnDut(t, dut, nonDefaultVRF, nonDefaultNI)
+
+	// initialize non-default VRF
+	gnmi.Update(t, dut, gnmi.OC().NetworkInstance(nonDefaultVRF).Config(), &oc.NetworkInstance{
+		Name: ygot.String(nonDefaultVRF),
+		Type: oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF,
+	})
+	// assign port1 to VRF-1
 	configureDUTPort(t, dut, intBatch, &dutPort1, p1, nonDefaultVRF)
 	intBatch.Set(t, dut)
+
+	// add BGP neighbors to VRF-1
+	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv4, dutAS, ateAS2, "IPv4", true)
+	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv6, dutAS, ateAS2, "IPv6", true)
+	cfgplugins.UpdateNetworkInstanceOnDut(t, dut, nonDefaultVRF, nonDefaultNI)
+
 	return intBatch
 }
 
@@ -157,7 +164,6 @@ func configureDUTInterface(t *testing.T, dut *ondatra.DUTDevice, intBatch *gnmi.
 
 // configureDUTLoopback sets up or retrieves the loopback interface on the DUT.
 func configureDUTLoopback(t *testing.T, dut *ondatra.DUTDevice, intBatch *gnmi.SetBatch) {
-	t.Helper()
 	d := gnmi.OC()
 	// Loopback0 for GUE Encap and Router ID
 	loopbackIntfName := netutil.LoopbackInterface(t, dut, 0)
@@ -185,7 +191,6 @@ func configureDUTLoopback(t *testing.T, dut *ondatra.DUTDevice, intBatch *gnmi.S
 
 // configureDUTPort configure DUT ports.
 func configureDUTPort(t *testing.T, dut *ondatra.DUTDevice, intBatch *gnmi.SetBatch, attrs *attrs.Attributes, p *ondatra.Port, niName string) {
-	t.Helper()
 	d := gnmi.OC()
 	cfgplugins.AssignToNetworkInstance(t, dut, p.Name(), niName, 0)
 	i := attrs.NewOCInterface(p.Name(), dut)
@@ -197,7 +202,6 @@ func configureDUTPort(t *testing.T, dut *ondatra.DUTDevice, intBatch *gnmi.SetBa
 //  1. VRF Selection Extended feature.
 //  2. Policy Forwarding feature.
 func configureHardwareInit(t *testing.T, dut *ondatra.DUTDevice) {
-	t.Helper()
 	hardwareVRFCfg := cfgplugins.NewDUTHardwareInit(t, dut, cfgplugins.FeatureVrfSelectionExtended)
 	hardwarePfCfg := cfgplugins.NewDUTHardwareInit(t, dut, cfgplugins.FeaturePolicyForwarding)
 	if hardwareVRFCfg == "" || hardwarePfCfg == "" {
@@ -246,7 +250,6 @@ func configureGUEEncap(t *testing.T, dut *ondatra.DUTDevice, trafficType, nextHo
 
 // configureATE configures the ATE topology with two BGP peers.
 func configureATE(t *testing.T, ate *ondatra.ATEDevice) gosnappi.Config {
-	t.Helper()
 	config := gosnappi.NewConfig()
 	p1 := ate.Port(t, "port1")
 	p2 := ate.Port(t, "port2")
@@ -291,7 +294,6 @@ func configureATE(t *testing.T, ate *ondatra.ATEDevice) gosnappi.Config {
 
 // createFlow creates a traffic flow from ATE port 1 to port 2.
 func createFlow(t *testing.T, dut *ondatra.DUTDevice, top gosnappi.Config, name, srcIP, dstIP string, isV4 bool) gosnappi.Flow {
-	t.Helper()
 	macAddress := gnmi.Get(t, dut, gnmi.OC().Interface(dut.Port(t, "port1").Name()).Ethernet().MacAddress().State())
 	top.Flows().Clear()
 	flow := top.Flows().Add().SetName(name)
@@ -353,9 +355,9 @@ func verifyTraffic(t *testing.T, ate *ondatra.ATEDevice, top gosnappi.Config, fl
 
 // TestURPFNonDefaultNI is the main test function.
 func TestURPFNonDefaultNI(t *testing.T) {
-	t.Helper()
 	dut := ondatra.DUT(t, "dut")
 	ate := ondatra.ATE(t, "ate")
+	defaultNIName := deviations.DefaultNetworkInstance(dut)
 
 	t.Log("Configure DUT with baseline BGP, VRF, and uRPF settings")
 	batch := configureDUT(t, dut)
@@ -532,7 +534,7 @@ func verifyURPFCounters(t *testing.T, dut *ondatra.DUTDevice, initialDropCount u
 
 // bgpRouteVerification build routes parameters and verify routes if advertised routes are installed in DUT AFT.
 func bgpRouteVerification(t *testing.T, dut *ondatra.DUTDevice) {
-	t.Helper()
+	defaultNIName := deviations.DefaultNetworkInstance(dut)
 	// Build routes to advertise
 	routesToAdvertise := map[string]cfgplugins.RouteInfo{
 		fmt.Sprintf("%s/%d", ateAdvIPv4Prefix1, prefix1Len):   {VRF: nonDefaultVRF, IPType: cfgplugins.IPv4, DefaultName: defaultNIName},

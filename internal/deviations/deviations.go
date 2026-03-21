@@ -1757,7 +1757,7 @@ func DisableHardwareNexthopProxy(dut *ondatra.DUTDevice) bool {
 
 // URPFConfigOCUnsupported returns true if OC does not support configuring uRPF.
 func URPFConfigOCUnsupported(dut *ondatra.DUTDevice) bool {
-	return lookupDUTDeviations(dut).GetInterfacePolicyForwardingUnsupported()
+	return lookupDUTDeviations(dut).GetUrpfConfigOcUnsupported()
 }
 
 // StaticRouteNextNetworkInstanceOCUnsupported returns true for devices that don't support NextNetworkInstance of static route next hop.

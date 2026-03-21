@@ -862,19 +862,32 @@ func CreateBGPNeighbors(t *testing.T, dut *ondatra.DUTDevice, sb *gnmi.SetBatch,
 
 // ConfigureBGPNeighbor configures a BGP neighbor.
 func ConfigureBGPNeighbor(t *testing.T, dut *ondatra.DUTDevice, ni *oc.NetworkInstance, routerID, peerAddress string, routerAS, peerAS uint32, ipType string, sendReceivePaths bool) {
+	t.Helper()
 	if ni == nil {
 		t.Fatalf("Network Instance is not configured")
 	}
-	proto := ni.GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP")
+	proto := ni.GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, deviations.DefaultBgpInstanceName(dut))
+	proto.Enabled = ygot.Bool(true)
+
 	bgp := proto.GetOrCreateBgp()
 	global := bgp.GetOrCreateGlobal()
 	global.As = ygot.Uint32(routerAS)
 	global.RouterId = ygot.String(routerID)
+	switch ipType {
+	case IPv4:
+		global.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).SetEnabled(true)
+	case IPv6:
+		global.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).SetEnabled(true)
+	}
 
 	neighbor := bgp.GetOrCreateNeighbor(peerAddress)
 	neighbor.PeerAs = ygot.Uint32(peerAS)
 	neighbor.Enabled = ygot.Bool(true)
-	neighbor.SendCommunityType = []oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_NONE}
+	if deviations.BgpCommunityTypeSliceInputUnsupported(dut) {
+		neighbor.SendCommunity = oc.Bgp_CommunityType_NONE
+	} else if !deviations.SkipBgpSendCommunityType(dut) {
+		neighbor.SendCommunityType = []oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_NONE}
+	}
 
 	neighbor.GetOrCreateApplyPolicy().DefaultExportPolicy = oc.RoutingPolicy_DefaultPolicyType_ACCEPT_ROUTE
 	neighbor.GetOrCreateApplyPolicy().DefaultImportPolicy = oc.RoutingPolicy_DefaultPolicyType_ACCEPT_ROUTE
@@ -1582,7 +1595,7 @@ func IncrementIP(ipStr string, num int) (string, string) {
 // VerifyDUTVrfBGPState verify BGP neighbor status with configured DUT VRF configuration.
 func VerifyDUTVrfBGPState(t *testing.T, dut *ondatra.DUTDevice, cfg VrfBGPState) {
 	t.Helper()
-	statePath := gnmi.OC().NetworkInstance(cfg.NetworkInstanceName).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").Bgp()
+	statePath := gnmi.OC().NetworkInstance(cfg.NetworkInstanceName).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, deviations.DefaultBgpInstanceName(dut)).Bgp()
 	for _, nbrIp := range cfg.NeighborIPs {
 		nbrPath := statePath.Neighbor(nbrIp)
 		t.Logf("Waiting for BGP neighbor to establish...")

@@ -19,3 +19,14 @@ platform_exceptions:  {
     static_route_next_network_instance_oc_unsupported: true
   }
 }
+platform_exceptions:  {
+  platform:  {
+    vendor:  CISCO
+  }
+  deviations:  {
+    bgp_community_type_slice_input_unsupported: true
+    default_bgp_instance_name: "default"
+    urpf_config_oc_unsupported: true
+  }
+}
+
