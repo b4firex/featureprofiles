@@ -148,12 +148,16 @@ func configureDUTInterface(t *testing.T, dut *ondatra.DUTDevice, intBatch *gnmi.
 
 	i.GetOrCreateEthernet()
 	i4 := i.GetOrCreateSubinterface(0).GetOrCreateIpv4()
-	i4.Enabled = ygot.Bool(true)
+	if !deviations.IPv4MissingEnabled(dut) {
+		i4.Enabled = ygot.Bool(true)
+	}
 	a := i4.GetOrCreateAddress(attrs.IPv4)
 	a.PrefixLength = ygot.Uint8(attrs.IPv4Len)
 
 	i6 := i.GetOrCreateSubinterface(0).GetOrCreateIpv6()
-	i6.Enabled = ygot.Bool(true)
+	if !deviations.IPv4MissingEnabled(dut) { // FIXME: change to new deviation
+		i6.Enabled = ygot.Bool(true)
+	}
 	a6 := i6.GetOrCreateAddress(attrs.IPv6)
 	a6.PrefixLength = ygot.Uint8(attrs.IPv6Len)
 	if urpf {

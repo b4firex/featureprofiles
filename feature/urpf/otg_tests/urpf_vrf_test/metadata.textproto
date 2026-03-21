@@ -27,6 +27,7 @@ platform_exceptions:  {
     bgp_community_type_slice_input_unsupported: true
     default_bgp_instance_name: "default"
     urpf_config_oc_unsupported: true
+    ipv4_missing_enabled: true
   }
 }
 

@@ -1277,6 +1277,13 @@ func ConfigureURPFonDutInt(t *testing.T, dut *ondatra.DUTDevice, cfg URPFConfigP
 			ipv6 verify unicast source reachable-via any
 			`, cfg.InterfaceName)
 			helpers.GnmiCLIConfig(t, dut, urpfCliConfig)
+		case ondatra.CISCO:
+			urpfCliConfig := fmt.Sprintf(`
+			interface %s
+			 ipv4 verify unicast source reachable-via rx
+			 ipv6 verify unicast source reachable-via rx
+			`, cfg.InterfaceName)
+			helpers.GnmiCLIConfig(t, dut, urpfCliConfig)
 		default:
 			t.Fatalf("Unsupported vendor: %v", dut.Vendor())
 		}
