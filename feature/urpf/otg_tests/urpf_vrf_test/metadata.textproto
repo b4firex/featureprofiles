@@ -28,6 +28,8 @@ platform_exceptions:  {
     default_bgp_instance_name: "default"
     urpf_config_oc_unsupported: true
     ipv4_missing_enabled: true
+    bgp_afi_safi_in_default_ni_before_other_ni: true
+    set_route_distinguisher_on_vrf_before_activating_bgp_afi_safis: true
   }
 }
 

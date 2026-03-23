@@ -114,22 +114,36 @@ func configureDUT(t *testing.T, dut *ondatra.DUTDevice) *gnmi.SetBatch {
 	defaultNI := cfgplugins.ConfigureNetworkInstance(t, dut, defaultNIName, true)
 	nonDefaultNI := cfgplugins.ConfigureNetworkInstance(t, dut, nonDefaultVRF, false)
 
+	// Build VRF-1 BGP neighbors (eBGP peers on port1).
 	cfgplugins.ConfigureBGPNeighbor(t, dut, nonDefaultNI, dutPort1.IPv4, atePort1.IPv4, dutAS, ateAS1, "IPv4", true)
 	cfgplugins.ConfigureBGPNeighbor(t, dut, nonDefaultNI, dutPort1.IPv4, atePort1.IPv6, dutAS, ateAS1, "IPv6", true)
+
+	// Build DEFAULT NI BGP neighbors (iBGP peers on port2).
+	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv4, dutAS, ateAS2, "IPv4", true)
+	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv6, dutAS, ateAS2, "IPv6", true)
+
+	// configure afi-safis in the global BGP before VRF afi-safis.
+	if deviations.BgpAfiSafiInDefaultNiBeforeOtherNi(dut) {
+		defGlobal := defaultNI.GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, deviations.DefaultBgpInstanceName(dut)).GetOrCreateBgp().GetOrCreateGlobal()
+		defGlobal.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_L3VPN_IPV4_UNICAST).Enabled = ygot.Bool(true)
+		defGlobal.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_L3VPN_IPV6_UNICAST).Enabled = ygot.Bool(true)
+	}
+
 	cfgplugins.UpdateNetworkInstanceOnDut(t, dut, defaultNIName, defaultNI)
 
 	// initialize non-default VRF
-	gnmi.Update(t, dut, gnmi.OC().NetworkInstance(nonDefaultVRF).Config(), &oc.NetworkInstance{
+	vrfInst := &oc.NetworkInstance{
 		Name: ygot.String(nonDefaultVRF),
 		Type: oc.NetworkInstanceTypes_NETWORK_INSTANCE_TYPE_L3VRF,
-	})
+	}
+	if deviations.SetRouteDistinguisherOnVrfBeforeActivatingBgpAfiSafis(dut) {
+		vrfInst.RouteDistinguisher = ygot.String(fmt.Sprintf("%d:%d", dutAS, 100))
+	}
+	gnmi.Update(t, dut, gnmi.OC().NetworkInstance(nonDefaultVRF).Config(), vrfInst)
 	// assign port1 to VRF-1
 	configureDUTPort(t, dut, intBatch, &dutPort1, p1, nonDefaultVRF)
 	intBatch.Set(t, dut)
 
-	// add BGP neighbors to VRF-1
-	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv4, dutAS, ateAS2, "IPv4", true)
-	cfgplugins.ConfigureBGPNeighbor(t, dut, defaultNI, dutPort2.IPv4, atePort2.IPv6, dutAS, ateAS2, "IPv6", true)
 	cfgplugins.UpdateNetworkInstanceOnDut(t, dut, nonDefaultVRF, nonDefaultNI)
 
 	return intBatch

@@ -1999,3 +1999,10 @@ func QosFt(dut *ondatra.DUTDevice) string {
 func SystemMountPointStateFt(dut *ondatra.DUTDevice) string {
 	return lookupDUTDeviations(dut).GetSystemMountPointStateFt()
 }
+
+// SetRouteDistinguisherOnVrfBeforeActivatingBgpAfiSafis returns true if device requires Route Distinguisher to be set
+// on the VRF before BGP afi-safis can be activated.
+// Cisco: TODO add bug
+func SetRouteDistinguisherOnVrfBeforeActivatingBgpAfiSafis(dut *ondatra.DUTDevice) bool {
+	return lookupDUTDeviations(dut).GetSetRouteDistinguisherOnVrfBeforeActivatingBgpAfiSafis()
+}
