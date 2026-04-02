@@ -24,6 +24,7 @@ import (
 	"github.com/openconfig/featureprofiles/internal/cfgplugins"
 	"github.com/openconfig/featureprofiles/internal/deviations"
 	"github.com/openconfig/featureprofiles/internal/fptest"
+	"github.com/openconfig/featureprofiles/internal/helpers"
 	"github.com/openconfig/featureprofiles/internal/otgutils"
 	"github.com/openconfig/ondatra"
 	"github.com/openconfig/ondatra/gnmi"
@@ -215,6 +216,56 @@ func configureDUTPort(t *testing.T, dut *ondatra.DUTDevice, intBatch *gnmi.SetBa
 	gnmi.BatchUpdate(intBatch, d.Interface(p.Name()).Config(), i)
 }
 
+func configureAllowPolicy(t *testing.T, dut *ondatra.DUTDevice) error {
+	t.Helper()
+	d := &oc.Root{}
+	routePolicy := d.GetOrCreateRoutingPolicy()
+	policyDefinition := routePolicy.GetOrCreatePolicyDefinition("PASS-ALL")
+	statement, err := policyDefinition.AppendNewStatement("ALLOW")
+	if err != nil {
+		return fmt.Errorf("failed to append new statement to policy definition %s: %v", cfgplugins.ALLOW, err)
+	}
+	statement.GetOrCreateActions().PolicyResult = oc.RoutingPolicy_PolicyResultType_ACCEPT_ROUTE
+	gnmi.Update(t, dut, gnmi.OC().RoutingPolicy().Config(), routePolicy)
+	return nil
+}
+func configureRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice) {
+	root := &oc.Root{}
+	configureAllowPolicy(t, dut)
+
+	pathV4 := gnmi.OC().NetworkInstance(nonDefaultVRF).
+		Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").
+		Bgp().Neighbor("192.0.2.2").
+		AfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).ApplyPolicy()
+
+	policyV4 := root.GetOrCreateNetworkInstance(nonDefaultVRF).
+		GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").
+		GetOrCreateBgp().GetOrCreateNeighbor("192.0.2.2").
+		GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).
+		GetOrCreateApplyPolicy()
+	// create the policy
+	policyV4.SetImportPolicy([]string{"PASS-ALL"})
+	policyV4.SetExportPolicy([]string{"PASS-ALL"})
+
+	gnmi.Update(t, dut, pathV4.Config(), policyV4)
+
+	pathV6 := gnmi.OC().NetworkInstance(nonDefaultVRF).
+		Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").
+		Bgp().Neighbor("2001:db8:2::2").
+		AfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).ApplyPolicy()
+
+	policyV6 := root.GetOrCreateNetworkInstance(nonDefaultVRF).
+		GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").
+		GetOrCreateBgp().GetOrCreateNeighbor("2001:db8:1::2").
+		GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).
+		GetOrCreateApplyPolicy()
+	// create the policy
+	policyV6.SetImportPolicy([]string{"PASS-ALL"})
+	policyV6.SetExportPolicy([]string{"PASS-ALL"})
+
+	gnmi.Update(t, dut, pathV6.Config(), policyV6)
+}
+
 // configureHardwareInit sets up the initial hardware configuration on the DUT.
 // It pushes hardware initialization configs for:
 //  1. VRF Selection Extended feature.
@@ -379,6 +430,16 @@ func TestURPFNonDefaultNI(t *testing.T) {
 
 	t.Log("Configure DUT with baseline BGP, VRF, and uRPF settings")
 	batch := configureDUT(t, dut)
+	//configure Routing Policy
+	routePolicy := "route-policy PASS-ALL\n pass\n	end-policy"
+	helpers.GnmiCLIConfig(t, dut, routePolicy)
+	bgpRoutev4 := "router bgp 100\n vrf VRF-1\n neighbor 192.0.2.2\n address-family ipv4 unicast\n route-policy PASS-ALL in\n route-policy PASS-ALL out"
+	helpers.GnmiCLIConfig(t, dut, bgpRoutev4)
+	bgpRoutev6 := "router bgp 100\n vrf VRF-1\n neighbor 2001:db8:1::2\n address-family ipv6 unicast\n route-policy PASS-ALL in\n route-policy PASS-ALL out"
+	helpers.GnmiCLIConfig(t, dut, bgpRoutev6)
+	// configure Static route for VRF communication
+	static := "router static\n vrf VRF-1\n address-family ipv4 unicast\n  192.168.1.0/24 192.0.2.6\n  address-family ipv6 unicast\n   2001:db8:1000::/64 2001:db8:2::2"
+	helpers.GnmiCLIConfig(t, dut, static)
 
 	t.Log("Configure ATE with eBGP and iBGP peers")
 	otgConfig := configureATE(t, ate)
