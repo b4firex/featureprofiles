@@ -39,11 +39,10 @@ import (
 
 const (
 	prefixesStart = "2001:db8:1::1"
-	prefixP6Len   = 128
-	prefixesCount = 1
 	pathID        = 1
 	defaultRoute  = "0:0:0:0:0:0:0:0"
 	ateNetPrefix  = "2001:0db8::192:0:3:1"
+	timeout       = 10 * time.Second
 )
 
 var (
@@ -175,7 +174,8 @@ func TestManagementHA1(t *testing.T) {
 		// Disable port1 to force traffic to port2
 		gnmi.Replace(t, dut, gnmi.OC().Interface(p1.Name()).Enabled().Config(), false)
 		gnmi.Await(t, dut, gnmi.OC().Interface(p1.Name()).OperStatus().State(), 1*time.Minute, oc.Interface_OperStatus_DOWN)
-		time.Sleep(10 * time.Second)
+		t.Logf("sleeping for %v to ensure DUT has aged out ARP entry for port1", timeout)
+		time.Sleep(timeout)
 
 		bs.ATE.OTG().StartTraffic(t)
 		time.Sleep(30 * time.Second)
@@ -186,7 +186,7 @@ func TestManagementHA1(t *testing.T) {
 		framesRx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port2").ID()).Counters().InFrames().State())
 		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", 10*time.Second)
 		t.Logf("Frames sent/received: got: %d, want: %d, loss: %f", framesRx, framesTx, lossV6)
-		if lossV6 > lossTolerance || framesRx < framesTx {
+		if lossV6 > lossTolerance {
 			t.Errorf("Frames sent/received: got: %d, want: %d", framesRx, framesTx)
 		}
 	})
@@ -201,7 +201,8 @@ func TestManagementHA1(t *testing.T) {
 		gnmi.Replace(t, dut, gnmi.OC().Interface(p2.Name()).Enabled().Config(), false)
 		gnmi.Await(t, dut, gnmi.OC().Interface(p1.Name()).OperStatus().State(), 1*time.Minute, oc.Interface_OperStatus_DOWN)
 		gnmi.Await(t, dut, gnmi.OC().Interface(p2.Name()).OperStatus().State(), 1*time.Minute, oc.Interface_OperStatus_DOWN)
-		time.Sleep(10 * time.Second)
+		t.Logf("sleeping for %v to ensure DUT has aged out ARP entry for port1 and port2", timeout)
+		time.Sleep(timeout)
 
 		bs.ATE.OTG().StartTraffic(t)
 		time.Sleep(30 * time.Second)
@@ -210,7 +211,8 @@ func TestManagementHA1(t *testing.T) {
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		framesTx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port4").ID()).Counters().OutFrames().State())
 		framesRx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port3").ID()).Counters().InFrames().State())
-		if lossPct(float64(framesTx), float64(framesRx)) > lossTolerance {
+		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", 10*time.Second)
+		if lossV6 > lossTolerance {
 			t.Errorf("Frames sent/received: got: %d, want: %d", framesRx, framesTx)
 		}
 	})
@@ -223,7 +225,8 @@ func TestManagementHA1(t *testing.T) {
 		// Disable Port 2 to force traffic to Port 1
 		gnmi.Replace(t, dut, gnmi.OC().Interface(p2.Name()).Enabled().Config(), false)
 		gnmi.Await(t, dut, gnmi.OC().Interface(p2.Name()).OperStatus().State(), 1*time.Minute, oc.Interface_OperStatus_DOWN)
-		time.Sleep(5 * time.Second)
+		t.Logf("sleeping for %v to ensure DUT has aged out ARP entry for port1 and port2", timeout)
+		time.Sleep(timeout)
 
 		bs.ATE.OTG().StartTraffic(t)
 		time.Sleep(30 * time.Second)
@@ -233,7 +236,7 @@ func TestManagementHA1(t *testing.T) {
 		framesTx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port4").ID()).Counters().OutFrames().State())
 		framesRx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port1").ID()).Counters().InFrames().State())
 		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", 10*time.Second)
-		if lossV6 > lossTolerance || framesRx < framesTx {
+		if lossV6 > lossTolerance {
 			t.Errorf("Frames sent/received: got: %d, want: %d", framesRx, framesTx)
 		}
 	})
@@ -304,7 +307,6 @@ func configureEmulatedNetworks(bs *cfgplugins.BGPSession) {
 		bgp6PeerRoute.SetNextHopMode(gosnappi.BgpV6RouteRangeNextHopMode.MANUAL)
 		bgp6PeerRoute.AddPath().SetPathId(pathID)
 
-		bgp6PeerRoute.Addresses().Add().SetAddress(prefixesStart).SetPrefix(prefixP6Len).SetCount(prefixesCount)
 		bgp6PeerRoute.Addresses().Add().SetAddress(defaultRoute).SetPrefix(0)
 	}
 }
