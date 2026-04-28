@@ -182,12 +182,9 @@ func TestManagementHA1(t *testing.T) {
 		bs.ATE.OTG().StopTraffic(t)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
-		framesTx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port4").ID()).Counters().OutFrames().State())
-		framesRx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port2").ID()).Counters().InFrames().State())
 		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", 10*time.Second)
-		t.Logf("Frames sent/received: got: %d, want: %d, loss: %f", framesRx, framesTx, lossV6)
 		if lossV6 > lossTolerance {
-			t.Errorf("Frames sent/received: got: %d, want: %d", framesRx, framesTx)
+			t.Errorf("Loss percent for IPv6 Traffic: got: %f, want %f", lossV6, lossTolerance)
 		}
 	})
 
@@ -209,11 +206,9 @@ func TestManagementHA1(t *testing.T) {
 		bs.ATE.OTG().StopTraffic(t)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
-		framesTx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port4").ID()).Counters().OutFrames().State())
-		framesRx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port3").ID()).Counters().InFrames().State())
 		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", timeout)
 		if lossV6 > lossTolerance {
-			t.Errorf("Frames sent/received: got: %d, want: %d", framesRx, framesTx)
+			t.Errorf("Loss percent for IPv6 Traffic: got: %f, want %f", lossV6, lossTolerance)
 		}
 	})
 
@@ -233,11 +228,9 @@ func TestManagementHA1(t *testing.T) {
 		bs.ATE.OTG().StopTraffic(t)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
-		framesTx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port4").ID()).Counters().OutFrames().State())
-		framesRx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port1").ID()).Counters().InFrames().State())
 		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", 10*time.Second)
 		if lossV6 > lossTolerance {
-			t.Errorf("Frames sent/received: got: %d, want: %d", framesRx, framesTx)
+			t.Errorf("Loss percent for IPv6 Traffic: got: %f, want %f", lossV6, lossTolerance)
 		}
 	})
 
