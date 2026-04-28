@@ -211,7 +211,7 @@ func TestManagementHA1(t *testing.T) {
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		framesTx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port4").ID()).Counters().OutFrames().State())
 		framesRx := gnmi.Get(t, bs.ATE.OTG(), gnmi.OTG().Port(bs.ATE.Port(t, "port3").ID()).Counters().InFrames().State())
-		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", 10*time.Second)
+		lossV6 := otgutils.GetFlowLossPct(t, bs.ATE.OTG(), "v6Flow", timeout)
 		if lossV6 > lossTolerance {
 			t.Errorf("Frames sent/received: got: %d, want: %d", framesRx, framesTx)
 		}
