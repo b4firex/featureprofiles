@@ -225,7 +225,7 @@ func TestManagementHA1(t *testing.T) {
 		// Disable Port 2 to force traffic to Port 1
 		gnmi.Replace(t, dut, gnmi.OC().Interface(p2.Name()).Enabled().Config(), false)
 		gnmi.Await(t, dut, gnmi.OC().Interface(p2.Name()).OperStatus().State(), 1*time.Minute, oc.Interface_OperStatus_DOWN)
-		t.Logf("sleeping for %v to ensure DUT has aged out ARP entry for port1 and port2", timeout)
+		t.Logf("sleeping for %v to ensure DUT has aged out ARP entry for port2", timeout)
 		time.Sleep(timeout)
 
 		bs.ATE.OTG().StartTraffic(t)
