@@ -227,6 +227,12 @@ t.Fatalf("Unsupported vendor %s for deviation 'SkipAfiSafiPathForBgpMultipleAs'"
 	}
 
 	configureOTG(t, bs)
+
+	t.Logf("Waiting for all DUT ports to be operationally UP")
+	for _, p := range bs.OndatraDUTPorts {
+		gnmi.Await(t, bs.DUT, gnmi.OC().Interface(p.Name()).OperStatus().State(), 2*time.Minute, oc.Interface_OperStatus_UP)
+	}
+
 	bs.PushAndStart(t)
 
 	t.Logf("Verify DUT BGP sessions up")
@@ -276,7 +282,7 @@ t.Fatalf("Unsupported vendor %s for deviation 'SkipAfiSafiPathForBgpMultipleAs'"
 				}
 			}
 
-			sleepTime := time.Duration(totalPackets/trafficPps) + 5
+			sleepTime := time.Duration(totalPackets/trafficPps) + 10
 			bs.ATE.OTG().StartTraffic(t)
 			time.Sleep(sleepTime * time.Second)
 			bs.ATE.OTG().StopTraffic(t)
