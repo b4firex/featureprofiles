@@ -11,7 +11,7 @@ platform_exceptions: {
   }
   deviations: {
     ipv4_missing_enabled: true
-    sampling_qos_counters_below30_second_cadence_unsupported: true
+    sampling_qos_counters_below30_seconds_cadence_unsupported: true
   }
 }
 platform_exceptions: {
