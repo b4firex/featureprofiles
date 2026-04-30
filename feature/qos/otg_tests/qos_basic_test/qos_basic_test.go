@@ -545,22 +545,24 @@ func TestBasicConfigWithTraffic(t *testing.T) {
 			if !deviations.QosGetStatePathUnsupported(dut) {
 				for _, plan := range qosCounterSamplePlans(dut) {
 					t.Logf("Validating QoS counters with SAMPLE interval %s", plan.interval)
+					outputQueueStats := gnmi.Collect(t, gnmiOpts(t, dut, plan.interval), gnmi.OC().Qos().Interface(dp3.Name()).Output().State(), plan.timeout).Await(t)
+					if len(outputQueueStats) < plan.minSamples {
+						t.Errorf("Output(%s): got %d, want >= %d", plan.interval, len(outputQueueStats), plan.minSamples)
+					}
+
 					for _, data := range trafficFlows {
-						transmitPkts := gnmi.Collect(t, gnmiOpts(t, dut, plan.interval), gnmi.OC().Qos().Interface(dp3.Name()).Output().Queue(data.queue).TransmitPkts().State(), plan.timeout).Await(t)
-						if len(transmitPkts) < plan.minSamples {
-							t.Errorf("TransmitPkts(%s): got %d, want >= %d", plan.interval, len(transmitPkts), plan.minSamples)
+						samples := collectQosQueueCounterSamples(outputQueueStats, data.queue)
+						if len(samples.transmitPkts) < plan.minSamples {
+							t.Errorf("TransmitPkts(%s): got %d, want >= %d", plan.interval, len(samples.transmitPkts), plan.minSamples)
 						}
-						transmitOctets := gnmi.Collect(t, gnmiOpts(t, dut, plan.interval), gnmi.OC().Qos().Interface(dp3.Name()).Output().Queue(data.queue).TransmitOctets().State(), plan.timeout).Await(t)
-						if len(transmitOctets) < plan.minSamples {
-							t.Errorf("TransmitOctets(%s): got %d, want >= %d", plan.interval, len(transmitOctets), plan.minSamples)
+						if len(samples.transmitOctets) < plan.minSamples {
+							t.Errorf("TransmitOctets(%s): got %d, want >= %d", plan.interval, len(samples.transmitOctets), plan.minSamples)
 						}
-						droppedPkts := gnmi.Collect(t, gnmiOpts(t, dut, plan.interval), gnmi.OC().Qos().Interface(dp3.Name()).Output().Queue(data.queue).DroppedPkts().State(), plan.timeout).Await(t)
-						if len(droppedPkts) < plan.minSamples {
-							t.Errorf("DroppedPkts(%s): got %d, want >= %d", plan.interval, len(droppedPkts), plan.minSamples)
+						if len(samples.droppedPkts) < plan.minSamples {
+							t.Errorf("DroppedPkts(%s): got %d, want >= %d", plan.interval, len(samples.droppedPkts), plan.minSamples)
 						}
-						droppedOctets := gnmi.Collect(t, gnmiOpts(t, dut, plan.interval), gnmi.OC().Qos().Interface(dp3.Name()).Output().Queue(data.queue).DroppedOctets().State(), plan.timeout).Await(t)
-						if len(droppedOctets) < plan.minSamples {
-							t.Errorf("DroppedOctets(%s): got %d, want >= %d", plan.interval, len(droppedOctets), plan.minSamples)
+						if len(samples.droppedOctets) < plan.minSamples {
+							t.Errorf("DroppedOctets(%s): got %d, want >= %d", plan.interval, len(samples.droppedOctets), plan.minSamples)
 						}
 					}
 				}
@@ -1795,6 +1797,33 @@ func qosCounterSamplePlans(dut *ondatra.DUTDevice) []qosCounterSamplePlan {
 			minSamples: 1,
 		},
 	}
+}
+
+type qosQueueCounterSamples struct {
+	transmitPkts   []uint64
+	transmitOctets []uint64
+	droppedPkts    []uint64
+	droppedOctets  []uint64
+}
+
+// collectQosQueueCounterSamples extracts per-queue transmit and drop counter samples from the collected parent Qos_Interface_Output telemetry snapshots.
+func collectQosQueueCounterSamples(samples []*ygnmi.Value[*oc.Qos_Interface_Output], queueName string) qosQueueCounterSamples {
+	var out qosQueueCounterSamples
+	for _, sample := range samples {
+		output, ok := sample.Val()
+		if !ok || output == nil {
+			continue
+		}
+		queue := output.GetQueue(queueName)
+		if queue == nil {
+			continue
+		}
+		out.transmitPkts = append(out.transmitPkts, queue.GetTransmitPkts())
+		out.transmitOctets = append(out.transmitOctets, queue.GetTransmitOctets())
+		out.droppedPkts = append(out.droppedPkts, queue.GetDroppedPkts())
+		out.droppedOctets = append(out.droppedOctets, queue.GetDroppedOctets())
+	}
+	return out
 }
 
 func configureNoZeroSuppression(t *testing.T, dut *ondatra.DUTDevice) {
