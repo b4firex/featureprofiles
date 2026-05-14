@@ -333,7 +333,7 @@ func TestLineCardsNoHighCPUSpike(t *testing.T) {
 			}
 		}
 		if len(baseLCs) == 0 {
-			t.Errorf("ERROR: No Cisco linecard CPU base components found")
+			t.Skip("Skip the test as no linecard CPU base components were found.")
 		}
 		// Skip non-removable linecards
 		var removable []string
