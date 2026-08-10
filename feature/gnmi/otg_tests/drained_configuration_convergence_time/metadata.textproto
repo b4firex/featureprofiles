@@ -45,6 +45,5 @@ platform_exceptions: {
     vendor: CISCO
   }
   deviations: {
-    bgp_set_med_action_unsupported: true
   }
 }
