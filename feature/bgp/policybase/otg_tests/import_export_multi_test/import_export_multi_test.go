@@ -527,7 +527,7 @@ func configureImportExportMultifacetMatchActionsBGPPolicy(t *testing.T, dut *ond
 	}
 	gnmi.Replace(t, dut, pathV6.Config(), policyV6)
 
-	if !deviations.SkipBgpSendCommunityType(dut) {
+	if !deviations.BgpNeighborSendCommunityRequiresAfiSafi(dut) && !deviations.SkipBgpSendCommunityType(dut) {
 		n6 := root.GetOrCreateNetworkInstance(dni).GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).GetOrCreateBgp().GetOrCreateNeighbor(ipv6)
 		n6.SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_BOTH})
 		gnmi.Update(t, dut, gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().Neighbor(ipv6).Config(), n6)
@@ -543,7 +543,7 @@ func configureImportExportMultifacetMatchActionsBGPPolicy(t *testing.T, dut *ond
 	}
 	gnmi.Replace(t, dut, pathV4.Config(), policyV4)
 
-	if !deviations.SkipBgpSendCommunityType(dut) {
+	if !deviations.BgpNeighborSendCommunityRequiresAfiSafi(dut) && !deviations.SkipBgpSendCommunityType(dut) {
 		n4 := root.GetOrCreateNetworkInstance(dni).GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).GetOrCreateBgp().GetOrCreateNeighbor(ipv4)
 		n4.SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_BOTH})
 		gnmi.Update(t, dut, gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().Neighbor(ipv4).Config(), n4)
@@ -564,6 +564,9 @@ func configureImportExportMultifacetMatchActionsBGPPolicy(t *testing.T, dut *ond
 	} else {
 		gnmi.Update(t, dut, pathV61.Config(), policyV61)
 	}
+	if deviations.BgpNeighborSendCommunityRequiresAfiSafi(dut) {
+		gnmi.Replace(t, dut, gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().Neighbor(ipv61).AfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).SendCommunityType().Config(), []oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD, oc.Bgp_CommunityType_EXTENDED})
+	}
 
 	pathV41 := gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().Neighbor(ipv41).AfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).ApplyPolicy()
 	policyV41 := root.GetOrCreateNetworkInstance(dni).GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).GetOrCreateBgp().GetOrCreateNeighbor(ipv41).GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).GetOrCreateApplyPolicy()
@@ -579,6 +582,9 @@ func configureImportExportMultifacetMatchActionsBGPPolicy(t *testing.T, dut *ond
 		gnmi.Replace(t, dut, pathV41.Config(), policyV41)
 	} else {
 		gnmi.Update(t, dut, pathV41.Config(), policyV41)
+	}
+	if deviations.BgpNeighborSendCommunityRequiresAfiSafi(dut) {
+		gnmi.Replace(t, dut, gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().Neighbor(ipv41).AfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).SendCommunityType().Config(), []oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD, oc.Bgp_CommunityType_EXTENDED})
 	}
 }
 
@@ -1083,7 +1089,7 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 				validateOTGBgpPrefixV6AndASLocalPrefMED(t, otg, dut, otgConfig, bs.ATEPorts[0].Name+".BGP6.peer", prefixesV6[index][idx], prefixV6Len, otgASPath, asPathValue)
 			}
 		}
-		if testCommunityResults[index] && !deviations.SkipBgpSendCommunityType(dut) {
+		if testCommunityResults[index] && (!deviations.SkipBgpSendCommunityType(dut) || deviations.BgpNeighborSendCommunityRequiresAfiSafi(dut)) {
 			for idx, pref := range prefix {
 				validateOTGBgpPrefixV4AndASLocalPrefMED(t, otg, dut, otgConfig, bs.ATEPorts[0].Name+".BGP4.peer", pref, prefixV4Len, otgCommunity, communityResultValue)
 				validateOTGBgpPrefixV6AndASLocalPrefMED(t, otg, dut, otgConfig, bs.ATEPorts[0].Name+".BGP6.peer", prefixesV6[index][idx], prefixV6Len, otgCommunity, communityResultValue)
