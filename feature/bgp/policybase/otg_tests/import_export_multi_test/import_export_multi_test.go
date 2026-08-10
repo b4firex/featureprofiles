@@ -798,8 +798,17 @@ func awaitBGPReady(t *testing.T, bs *cfgplugins.BGPSession, ipv4, ipv6, ipv41, i
 func awaitExpectedPrefixState(t *testing.T, dut *ondatra.DUTDevice, prefix string, isIPv4, wantPresent bool) {
 	t.Helper()
 	dni := deviations.DefaultNetworkInstance(dut)
+	prefixLength := prefixV6Len
 	if isIPv4 {
-		prefix += "/" + strconv.Itoa(prefixV4Len)
+		prefixLength = prefixV4Len
+	}
+	rawPrefix := prefix + "/" + strconv.Itoa(prefixLength)
+	_, network, err := net.ParseCIDR(rawPrefix)
+	if err != nil {
+		t.Fatalf("Failed to parse prefix %s: %v", rawPrefix, err)
+	}
+	prefix = network.String()
+	if isIPv4 {
 		if got, ok := gnmi.Watch(t, dut, gnmi.OC().NetworkInstance(dni).Afts().Ipv4Entry(prefix).State(), time.Minute, func(val *ygnmi.Value[*oc.NetworkInstance_Afts_Ipv4Entry]) bool {
 			entry, present := val.Val()
 			return present == wantPresent && (!present || entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP)
@@ -809,7 +818,6 @@ func awaitExpectedPrefixState(t *testing.T, dut *ondatra.DUTDevice, prefix strin
 		return
 	}
 
-	prefix += "/" + strconv.Itoa(prefixV6Len)
 	if got, ok := gnmi.Watch(t, dut, gnmi.OC().NetworkInstance(dni).Afts().Ipv6Entry(prefix).State(), time.Minute, func(val *ygnmi.Value[*oc.NetworkInstance_Afts_Ipv6Entry]) bool {
 		entry, present := val.Val()
 		return present == wantPresent && (!present || entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP)
