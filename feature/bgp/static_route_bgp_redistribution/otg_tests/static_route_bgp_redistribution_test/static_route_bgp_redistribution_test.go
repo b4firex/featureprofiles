@@ -507,7 +507,9 @@ func configureTableConnection(t *testing.T, dut *ondatra.DUTDevice, isV4, mPropa
 		tc.SetDisableMetricPropagation(!mPropagation)
 	}
 
-	if deviations.EnableTableConnections(dut) {
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		gnmi.BatchReplace(batchSet, niPath.TableConnection(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_STATIC, oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, addressFamily).Config(), tc)
+	} else if deviations.EnableTableConnections(dut) {
 		fptest.ConfigEnableTbNative(t, dut)
 		gnmi.BatchUpdate(batchSet, niPath.TableConnection(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_STATIC, oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, addressFamily).Config(), tc)
 	} else {
@@ -643,6 +645,23 @@ func configureTableConnection(t *testing.T, dut *ondatra.DUTDevice, isV4, mPropa
 			}
 		}
 	}
+}
+
+func clearTableConnectionImportPolicy(t *testing.T, dut *ondatra.DUTDevice, addressFamily oc.E_Types_ADDRESS_FAMILY) {
+	t.Helper()
+
+	tableConnPath := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(dut)).TableConnection(
+		oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_STATIC,
+		oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP,
+		addressFamily,
+	)
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		tableConn := gnmi.Get[*oc.NetworkInstance_TableConnection](t, dut, tableConnPath.Config())
+		tableConn.ImportPolicy = nil
+		gnmi.Replace(t, dut, tableConnPath.Config(), tableConn)
+		return
+	}
+	gnmi.Delete(t, dut, tableConnPath.ImportPolicy().Config())
 }
 
 // Validate configurations for table-connections and routing-policy
@@ -1046,14 +1065,12 @@ func redistributeStaticRoutePolicyWithCommunitySet(t *testing.T, dut *ondatra.DU
 	communitySetPolicyDefinition := communitySet.GetOrCreateDefinedSets().GetOrCreateBgpDefinedSets().GetOrCreateCommunitySet(communitySetName)
 	communitySetPolicyDefinition.SetCommunityMember([]oc.RoutingPolicy_DefinedSets_BgpDefinedSets_CommunitySet_CommunityMember_Union{oc.UnionString("64512:100")})
 
-	// Delete the references import policy under table connection before replacing the policy.
-	if isV4 {
-		tableConnV4Path := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(dut)).TableConnection(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_STATIC, oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, oc.Types_ADDRESS_FAMILY_IPV4)
-		gnmi.Delete(t, dut, tableConnV4Path.ImportPolicy().Config())
-	} else {
-		tableConnV6Path := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(dut)).TableConnection(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_STATIC, oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, oc.Types_ADDRESS_FAMILY_IPV6)
-		gnmi.Delete(t, dut, tableConnV6Path.ImportPolicy().Config())
+	// Delete the referenced import policy under table connection before replacing the policy.
+	addressFamily := oc.Types_ADDRESS_FAMILY_IPV4
+	if !isV4 {
+		addressFamily = oc.Types_ADDRESS_FAMILY_IPV6
 	}
+	clearTableConnectionImportPolicy(t, dut, addressFamily)
 
 	gnmi.Replace(t, dut, policyPath.Config(), redistributePolicyDefinition)
 	gnmi.Replace(t, dut, communityPath.Config(), communitySetPolicyDefinition)
