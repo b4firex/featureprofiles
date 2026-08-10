@@ -1064,6 +1064,10 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 	}
 
 	configureOTG(t, bs, prefixesV4, prefixesV6, communityMembers)
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		configureFlowV4(t, bs)
+		configureFlowV6(t, bs)
+	}
 	bs.PushAndStart(t)
 
 	ipv4 := bs.ATETop.Devices().Items()[1].Ethernets().Items()[0].Ipv4Addresses().Items()[0].Address()
@@ -1083,10 +1087,12 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 	t.Logf("Verify Import Export Accept all bgp policy")
 	configureImportExportAcceptAllBGPPolicy(t, bs.DUT, ipv4, ipv6)
 
-	configureFlowV4(t, bs)
-	configureFlowV6(t, bs)
+	if !deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		configureFlowV4(t, bs)
+		configureFlowV6(t, bs)
 
-	bs.PushAndStartATE(t)
+		bs.PushAndStartATE(t)
+	}
 
 	testResults := [6]bool{true, true, true, true, true, true}
 	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
