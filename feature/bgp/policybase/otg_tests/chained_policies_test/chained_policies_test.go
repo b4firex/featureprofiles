@@ -259,7 +259,10 @@ func configureImportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetMatchSetOptions(oc.RoutingPolicy_MatchSetOptionsRestrictedType_ANY)
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetPrefixSet(v4PrefixSet)
 
-	pdef2 := rp.GetOrCreatePolicyDefinition(v4LPPolicy)
+	pdef2 := pdef1
+	if !deviations.FlattenPolicyWithMultipleStatements(dut) {
+		pdef2 = rp.GetOrCreatePolicyDefinition(v4LPPolicy)
+	}
 	stmt2, err := pdef2.AppendNewStatement(v4LPStatement)
 	if err != nil {
 		t.Fatalf("AppendNewStatement(%s) failed: %v", v4LPStatement, err)
@@ -281,8 +284,29 @@ func configureImportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	if !deviations.DefaultImportExportPolicyUnsupported(dut) {
 		policy.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 	}
-	policy.SetImportPolicy([]string{v4PrefixPolicy, v4LPPolicy})
-	if deviations.SkipSettingStatementForPolicy(dut) {
+	if deviations.FlattenPolicyWithMultipleStatements(dut) {
+		policy.SetImportPolicy([]string{v4PrefixPolicy})
+	} else {
+		policy.SetImportPolicy([]string{v4PrefixPolicy, v4LPPolicy})
+	}
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		switch operation {
+		case "set":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetExportPolicy([]string{"PERMIT-ALL"})
+			}
+			gnmi.BatchReplace(batch, path.Config(), policy)
+		case "delete":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetImportPolicy([]string{"PERMIT-ALL"})
+				policy.SetExportPolicy([]string{"PERMIT-ALL"})
+				gnmi.BatchReplace(batch, path.Config(), policy)
+			} else {
+				gnmi.BatchDelete(batch, path.Config())
+			}
+		}
+		batch.Set(t, dut)
+	} else if deviations.SkipSettingStatementForPolicy(dut) {
 		gnmi.Update(t, dut, path.Config(), policy)
 	} else {
 		if operation == "set" {
@@ -411,7 +435,28 @@ func configureExportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	} else {
 		policy.SetExportPolicy([]string{v4ASPPolicy, v4MedPolicy})
 	}
-	if deviations.SkipSettingStatementForPolicy(dut) {
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		switch operation {
+		case "set":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetImportPolicy([]string{"PERMIT-ALL"})
+				gnmi.BatchReplace(batch, path.Config(), policy)
+			} else {
+				gnmi.BatchReplace(batch, path.Config(), policy)
+				gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
+			}
+		case "delete":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetImportPolicy([]string{"PERMIT-ALL"})
+				policy.SetExportPolicy([]string{"PERMIT-ALL"})
+				gnmi.BatchReplace(batch, path.Config(), policy)
+			} else {
+				gnmi.BatchDelete(batch, path.Config())
+				gnmi.BatchDelete(batch, importPolPath.Config())
+			}
+		}
+		batch.Set(t, dut)
+	} else if deviations.SkipSettingStatementForPolicy(dut) {
 		gnmi.Update(t, dut, path.Config(), policy)
 	} else {
 		if operation == "set" {
@@ -486,7 +531,10 @@ func configureImportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetMatchSetOptions(oc.RoutingPolicy_MatchSetOptionsRestrictedType_ANY)
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetPrefixSet(v6PrefixSet)
 
-	pdef2 := rp.GetOrCreatePolicyDefinition(v6LPPolicy)
+	pdef2 := pdef1
+	if !deviations.FlattenPolicyWithMultipleStatements(dut) {
+		pdef2 = rp.GetOrCreatePolicyDefinition(v6LPPolicy)
+	}
 	stmt2, err := pdef2.AppendNewStatement(v6LPStatement)
 	if err != nil {
 		t.Fatalf("AppendNewStatement(%s) failed: %v", v6LPStatement, err)
@@ -510,8 +558,29 @@ func configureImportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 		policy.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 	}
 
-	policy.SetImportPolicy([]string{v6PrefixPolicy, v6LPPolicy})
-	if deviations.SkipSettingStatementForPolicy(dut) {
+	if deviations.FlattenPolicyWithMultipleStatements(dut) {
+		policy.SetImportPolicy([]string{v6PrefixPolicy})
+	} else {
+		policy.SetImportPolicy([]string{v6PrefixPolicy, v6LPPolicy})
+	}
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		switch operation {
+		case "set":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetExportPolicy([]string{"PERMIT-ALL"})
+			}
+			gnmi.BatchReplace(batch, path.Config(), policy)
+		case "delete":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetImportPolicy([]string{"PERMIT-ALL"})
+				policy.SetExportPolicy([]string{"PERMIT-ALL"})
+				gnmi.BatchReplace(batch, path.Config(), policy)
+			} else {
+				gnmi.BatchDelete(batch, path.Config())
+			}
+		}
+		batch.Set(t, dut)
+	} else if deviations.SkipSettingStatementForPolicy(dut) {
 		gnmi.Update(t, dut, path.Config(), policy)
 	} else {
 		if operation == "set" {
@@ -637,7 +706,28 @@ func configureExportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 	} else {
 		policy.SetExportPolicy([]string{v6ASPPolicy, v6MedPolicy})
 	}
-	if deviations.SkipSettingStatementForPolicy(dut) {
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		switch operation {
+		case "set":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetImportPolicy([]string{"PERMIT-ALL"})
+				gnmi.BatchReplace(batch, path.Config(), policy)
+			} else {
+				gnmi.BatchReplace(batch, path.Config(), policy)
+				gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
+			}
+		case "delete":
+			if deviations.DefaultImportExportPolicyUnsupported(dut) {
+				policy.SetImportPolicy([]string{"PERMIT-ALL"})
+				policy.SetExportPolicy([]string{"PERMIT-ALL"})
+				gnmi.BatchReplace(batch, path.Config(), policy)
+			} else {
+				gnmi.BatchDelete(batch, path.Config())
+				gnmi.BatchDelete(batch, importPolPath.Config())
+			}
+		}
+		batch.Set(t, dut)
+	} else if deviations.SkipSettingStatementForPolicy(dut) {
 		gnmi.Update(t, dut, path.Config(), policy)
 	} else {
 		if operation == "set" {
@@ -850,6 +940,12 @@ func (td *testData) advertiseRoutesWithEBGP(t *testing.T) {
 		afisafiv62 := nV62.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST)
 		afisafiv62.GetOrCreateApplyPolicy().SetImportPolicy([]string{"PERMIT-ALL"})
 		afisafiv62.GetOrCreateApplyPolicy().SetExportPolicy([]string{"PERMIT-ALL"})
+	}
+	if deviations.BgpNeighborDefaultsUnsupported(td.dut) {
+		nV41.SetEnabled(true)
+		nV42.SetEnabled(true)
+		nV61.SetEnabled(true)
+		nV62.SetEnabled(true)
 	}
 	gnmi.Update(t, td.dut, gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(td.dut)).Config(), ni)
 
