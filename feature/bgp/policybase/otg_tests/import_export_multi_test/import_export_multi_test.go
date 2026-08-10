@@ -131,12 +131,16 @@ func deleteBGPPolicy(t *testing.T, dut *ondatra.DUTDevice, nbrList []*bgpNbrList
 	bgpPath := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(dut)).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").Bgp()
 	for _, nbr := range nbrList {
 		nbrAfiSafiPath := bgpPath.Neighbor(nbr.nbrAddr).AfiSafi(nbr.afiSafi)
-		peerAfiSafiPath := bgpPath.PeerGroup(cfgplugins.BGPPeerGroup1).AfiSafi(nbr.afiSafi)
 		b := &gnmi.SetBatch{}
-		gnmi.BatchDelete(b, nbrAfiSafiPath.ApplyPolicy().ImportPolicy().Config())
-		gnmi.BatchDelete(b, nbrAfiSafiPath.ApplyPolicy().ExportPolicy().Config())
-		gnmi.BatchDelete(b, peerAfiSafiPath.ApplyPolicy().ImportPolicy().Config())
-		gnmi.BatchDelete(b, peerAfiSafiPath.ApplyPolicy().ExportPolicy().Config())
+		if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+			gnmi.BatchDelete(b, nbrAfiSafiPath.ApplyPolicy().Config())
+		} else {
+			peerAfiSafiPath := bgpPath.PeerGroup(cfgplugins.BGPPeerGroup1).AfiSafi(nbr.afiSafi)
+			gnmi.BatchDelete(b, nbrAfiSafiPath.ApplyPolicy().ImportPolicy().Config())
+			gnmi.BatchDelete(b, nbrAfiSafiPath.ApplyPolicy().ExportPolicy().Config())
+			gnmi.BatchDelete(b, peerAfiSafiPath.ApplyPolicy().ImportPolicy().Config())
+			gnmi.BatchDelete(b, peerAfiSafiPath.ApplyPolicy().ExportPolicy().Config())
+		}
 		b.Set(t, dut)
 	}
 }
@@ -548,20 +552,34 @@ func configureImportExportMultifacetMatchActionsBGPPolicy(t *testing.T, dut *ond
 	pathV61 := gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().Neighbor(ipv61).AfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).ApplyPolicy()
 	policyV61 := root.GetOrCreateNetworkInstance(dni).GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).GetOrCreateBgp().GetOrCreateNeighbor(ipv61).GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).GetOrCreateApplyPolicy()
 	policyV61.SetExportPolicy([]string{parentPolicy})
-	if !deviations.DefaultRoutePolicyUnsupported(dut) {
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) && !deviations.DefaultRoutePolicyUnsupported(dut) {
+		policyV61.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
+		policyV61.SetDefaultExportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
+	} else if !deviations.DefaultRoutePolicyUnsupported(dut) {
 		policyV6.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 		policyV6.SetDefaultExportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 	}
-	gnmi.Update(t, dut, pathV61.Config(), policyV61)
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		gnmi.Replace(t, dut, pathV61.Config(), policyV61)
+	} else {
+		gnmi.Update(t, dut, pathV61.Config(), policyV61)
+	}
 
 	pathV41 := gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().Neighbor(ipv41).AfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).ApplyPolicy()
 	policyV41 := root.GetOrCreateNetworkInstance(dni).GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).GetOrCreateBgp().GetOrCreateNeighbor(ipv41).GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).GetOrCreateApplyPolicy()
 	policyV41.SetExportPolicy([]string{parentPolicy})
-	if !deviations.DefaultRoutePolicyUnsupported(dut) {
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) && !deviations.DefaultRoutePolicyUnsupported(dut) {
+		policyV41.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
+		policyV41.SetDefaultExportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
+	} else if !deviations.DefaultRoutePolicyUnsupported(dut) {
 		policyV4.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 		policyV4.SetDefaultExportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 	}
-	gnmi.Update(t, dut, pathV41.Config(), policyV41)
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		gnmi.Replace(t, dut, pathV41.Config(), policyV41)
+	} else {
+		gnmi.Update(t, dut, pathV41.Config(), policyV41)
+	}
 }
 
 func configureOTG(t *testing.T, bs *cfgplugins.BGPSession, prefixesV4 [][]string, prefixesV6 [][]string, communityMembers [][][]int) {
