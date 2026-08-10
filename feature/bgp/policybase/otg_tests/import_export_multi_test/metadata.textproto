@@ -35,6 +35,7 @@ platform_exceptions: {
     skip_checking_attribute_index: true
     skip_bgp_send_community_type: true
     bgp_set_med_action_unsupported: true
+    bgp_neighbor_defaults_unsupported: true
   }
 }
 platform_exceptions: {
