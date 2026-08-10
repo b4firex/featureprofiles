@@ -17,6 +17,7 @@ package import_export_multi_test
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"testing"
@@ -779,6 +780,56 @@ func verifyTrafficV4AndV6(t *testing.T, bs *cfgplugins.BGPSession, testResults [
 	otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 }
 
+func awaitBGPReady(t *testing.T, bs *cfgplugins.BGPSession, ipv4, ipv6, ipv41, ipv61 string) {
+	t.Helper()
+	bgpPath := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(bs.DUT)).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp()
+	for _, nbr := range []string{ipv4, ipv6, ipv41, ipv61} {
+		gnmi.Await(t, bs.DUT, bgpPath.Neighbor(nbr).SessionState().State(), 2*time.Minute, oc.Bgp_Neighbor_SessionState_ESTABLISHED)
+	}
+
+	for _, device := range bs.ATETop.Devices().Items() {
+		bgp4Peer := device.Bgp().Ipv4Interfaces().Items()[0].Peers().Items()[0]
+		bgp6Peer := device.Bgp().Ipv6Interfaces().Items()[0].Peers().Items()[0]
+		gnmi.Await(t, bs.ATE.OTG(), gnmi.OTG().BgpPeer(bgp4Peer.Name()).SessionState().State(), 2*time.Minute, otgtelemetry.BgpPeer_SessionState_ESTABLISHED)
+		gnmi.Await(t, bs.ATE.OTG(), gnmi.OTG().BgpPeer(bgp6Peer.Name()).SessionState().State(), 2*time.Minute, otgtelemetry.BgpPeer_SessionState_ESTABLISHED)
+	}
+}
+
+func awaitExpectedPrefixState(t *testing.T, dut *ondatra.DUTDevice, prefix string, isIPv4, wantPresent bool) {
+	t.Helper()
+	dni := deviations.DefaultNetworkInstance(dut)
+	if isIPv4 {
+		prefix += "/" + strconv.Itoa(prefixV4Len)
+		if got, ok := gnmi.Watch(t, dut, gnmi.OC().NetworkInstance(dni).Afts().Ipv4Entry(prefix).State(), time.Minute, func(val *ygnmi.Value[*oc.NetworkInstance_Afts_Ipv4Entry]) bool {
+			entry, present := val.Val()
+			return present == wantPresent && (!present || entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP)
+		}).Await(t); !ok {
+			t.Fatalf("IPv4 prefix %s presence did not become %t: got %v", prefix, wantPresent, got)
+		}
+		return
+	}
+
+	prefix += "/" + strconv.Itoa(prefixV6Len)
+	if got, ok := gnmi.Watch(t, dut, gnmi.OC().NetworkInstance(dni).Afts().Ipv6Entry(prefix).State(), time.Minute, func(val *ygnmi.Value[*oc.NetworkInstance_Afts_Ipv6Entry]) bool {
+		entry, present := val.Val()
+		return present == wantPresent && (!present || entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP)
+	}).Await(t); !ok {
+		t.Fatalf("IPv6 prefix %s presence did not become %t: got %v", prefix, wantPresent, got)
+	}
+}
+
+func awaitExpectedPrefixes(t *testing.T, dut *ondatra.DUTDevice, testResults [6]bool) {
+	t.Helper()
+	for index, prefixPairV4 := range prefixesV4 {
+		for _, prefix := range prefixPairV4 {
+			awaitExpectedPrefixState(t, dut, prefix, true, testResults[index])
+		}
+		for _, prefix := range prefixesV6[index] {
+			awaitExpectedPrefixState(t, dut, prefix, false, testResults[index])
+		}
+	}
+}
+
 func validateLocalPreferenceV4(t *testing.T, dut *ondatra.DUTDevice, prefix string, metricValue uint32) {
 	dni := deviations.DefaultNetworkInstance(dut)
 	bgpRIBPath := gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").Bgp().Rib()
@@ -1007,16 +1058,19 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 	configureOTG(t, bs, prefixesV4, prefixesV6, communityMembers)
 	bs.PushAndStart(t)
 
-	t.Log("Verify DUT BGP sessions up")
-	cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
-	t.Log("Verify OTG BGP sessions up")
-	cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
-
 	ipv4 := bs.ATETop.Devices().Items()[1].Ethernets().Items()[0].Ipv4Addresses().Items()[0].Address()
 	ipv6 := bs.ATETop.Devices().Items()[1].Ethernets().Items()[0].Ipv6Addresses().Items()[0].Address()
 
 	ipv41 := bs.ATETop.Devices().Items()[0].Ethernets().Items()[0].Ipv4Addresses().Items()[0].Address()
 	ipv61 := bs.ATETop.Devices().Items()[0].Ethernets().Items()[0].Ipv6Addresses().Items()[0].Address()
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		awaitBGPReady(t, bs, ipv4, ipv6, ipv41, ipv61)
+	} else {
+		t.Log("Verify DUT BGP sessions up")
+		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		t.Log("Verify OTG BGP sessions up")
+		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
+	}
 
 	t.Logf("Verify Import Export Accept all bgp policy")
 	configureImportExportAcceptAllBGPPolicy(t, bs.DUT, ipv4, ipv6)
@@ -1027,6 +1081,10 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 	bs.PushAndStartATE(t)
 
 	testResults := [6]bool{true, true, true, true, true, true}
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		awaitBGPReady(t, bs, ipv4, ipv6, ipv41, ipv61)
+		awaitExpectedPrefixes(t, dut, testResults)
+	}
 	verifyTrafficV4AndV6(t, bs, testResults)
 
 	// Delete routePolicy policy applied to neighbor
@@ -1041,10 +1099,14 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 		},
 	})
 
-	configureImportExportMultifacetMatchActionsBGPPolicy(t, bs.DUT, ipv4, ipv6, ipv41, ipv61)
-	time.Sleep(time.Second * 120)
-
 	testResults1 := [6]bool{false, true, false, false, true, true}
+	configureImportExportMultifacetMatchActionsBGPPolicy(t, bs.DUT, ipv4, ipv6, ipv41, ipv61)
+	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
+		awaitBGPReady(t, bs, ipv4, ipv6, ipv41, ipv61)
+		awaitExpectedPrefixes(t, dut, testResults1)
+	} else {
+		time.Sleep(time.Second * 120)
+	}
 	verifyTrafficV4AndV6(t, bs, testResults1)
 
 	testMedResults := [6]bool{false, true, false, false, true, true}
