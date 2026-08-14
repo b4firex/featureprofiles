@@ -17,7 +17,6 @@ package import_export_multi_test
 
 import (
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 	"testing"
@@ -795,128 +794,6 @@ func awaitBGPReady(t *testing.T, bs *cfgplugins.BGPSession, ipv4, ipv6, ipv41, i
 	}
 }
 
-func awaitExpectedPrefixState(t *testing.T, dut *ondatra.DUTDevice, prefix string, isIPv4, wantPresent bool) {
-	t.Helper()
-	dni := deviations.DefaultNetworkInstance(dut)
-	prefixLength := prefixV6Len
-	if isIPv4 {
-		prefixLength = prefixV4Len
-	}
-	rawPrefix := prefix + "/" + strconv.Itoa(prefixLength)
-	_, network, err := net.ParseCIDR(rawPrefix)
-	if err != nil {
-		t.Fatalf("Failed to parse prefix %s: %v", rawPrefix, err)
-	}
-	prefix = network.String()
-	if isIPv4 {
-		if got, ok := gnmi.Watch(t, dut, gnmi.OC().NetworkInstance(dni).Afts().Ipv4Entry(prefix).State(), time.Minute, func(val *ygnmi.Value[*oc.NetworkInstance_Afts_Ipv4Entry]) bool {
-			entry, present := val.Val()
-			return present == wantPresent && (!present || entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP)
-		}).Await(t); !ok {
-			t.Fatalf("IPv4 prefix %s presence did not become %t: got %v", prefix, wantPresent, got)
-		}
-		return
-	}
-
-	if got, ok := gnmi.Watch(t, dut, gnmi.OC().NetworkInstance(dni).Afts().Ipv6Entry(prefix).State(), time.Minute, func(val *ygnmi.Value[*oc.NetworkInstance_Afts_Ipv6Entry]) bool {
-		entry, present := val.Val()
-		return present == wantPresent && (!present || entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP)
-	}).Await(t); !ok {
-		t.Fatalf("IPv6 prefix %s presence did not become %t: got %v", prefix, wantPresent, got)
-	}
-}
-
-func observeExpectedPrefixState(t *testing.T, client *ygnmi.Client, dut *ondatra.DUTDevice, prefix string, isIPv4, wantPresent bool) {
-	t.Helper()
-	dni := deviations.DefaultNetworkInstance(dut)
-	prefixLength := prefixV6Len
-	addressFamily := "IPv6"
-	if isIPv4 {
-		prefixLength = prefixV4Len
-		addressFamily = "IPv4"
-	}
-	rawPrefix := prefix + "/" + strconv.Itoa(prefixLength)
-	_, network, err := net.ParseCIDR(rawPrefix)
-	if err != nil {
-		t.Logf("RCA: could not parse diagnostic AFT prefix %s: %v", rawPrefix, err)
-		return
-	}
-	prefix = network.String()
-
-	if isIPv4 {
-		path := gnmi.OC().NetworkInstance(dni).Afts().Ipv4Entry(prefix).State()
-		value, err := ygnmi.Lookup(t.Context(), client, path)
-		if err != nil {
-			t.Logf("RCA: %s prefix %s AFT query failed before traffic: %v", addressFamily, prefix, err)
-			return
-		}
-		entry, present := value.Val()
-		if !present {
-			t.Logf("RCA: %s prefix %s AFT query returned no value before traffic; want presence %t", addressFamily, prefix, wantPresent)
-			return
-		}
-		gotPresent := entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP
-		if gotPresent != wantPresent {
-			t.Logf("RCA: %s prefix %s presence got %t, want %t before traffic: entry %v", addressFamily, prefix, gotPresent, wantPresent, entry)
-			return
-		}
-		t.Logf("RCA: %s prefix %s presence is %t before traffic", addressFamily, prefix, wantPresent)
-		return
-	}
-
-	path := gnmi.OC().NetworkInstance(dni).Afts().Ipv6Entry(prefix).State()
-	value, err := ygnmi.Lookup(t.Context(), client, path)
-	if err != nil {
-		t.Logf("RCA: %s prefix %s AFT query failed before traffic: %v", addressFamily, prefix, err)
-		return
-	}
-	entry, present := value.Val()
-	if !present {
-		t.Logf("RCA: %s prefix %s AFT query returned no value before traffic; want presence %t", addressFamily, prefix, wantPresent)
-		return
-	}
-	gotPresent := entry.GetPrefix() == prefix && entry.GetOriginProtocol() == oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP
-	if gotPresent != wantPresent {
-		t.Logf("RCA: %s prefix %s presence got %t, want %t before traffic: entry %v", addressFamily, prefix, gotPresent, wantPresent, entry)
-		return
-	}
-	t.Logf("RCA: %s prefix %s presence is %t before traffic", addressFamily, prefix, wantPresent)
-}
-
-func observeExpectedPrefixes(t *testing.T, dut *ondatra.DUTDevice, testResults [6]bool) {
-	t.Helper()
-	rawClient, err := dut.RawAPIs().BindingDUT().DialGNMI(t.Context())
-	if err != nil {
-		t.Logf("RCA: could not dial gNMI for the initial AFT observation: %v", err)
-		return
-	}
-	client, err := ygnmi.NewClient(rawClient, ygnmi.WithTarget(dut.ID()))
-	if err != nil {
-		t.Logf("RCA: could not create the ygnmi client for the initial AFT observation: %v", err)
-		return
-	}
-	for index, prefixPairV4 := range prefixesV4 {
-		for _, prefix := range prefixPairV4 {
-			observeExpectedPrefixState(t, client, dut, prefix, true, testResults[index])
-		}
-		for _, prefix := range prefixesV6[index] {
-			observeExpectedPrefixState(t, client, dut, prefix, false, testResults[index])
-		}
-	}
-}
-
-func awaitExpectedPrefixes(t *testing.T, dut *ondatra.DUTDevice, testResults [6]bool) {
-	t.Helper()
-	for index, prefixPairV4 := range prefixesV4 {
-		for _, prefix := range prefixPairV4 {
-			awaitExpectedPrefixState(t, dut, prefix, true, testResults[index])
-		}
-		for _, prefix := range prefixesV6[index] {
-			awaitExpectedPrefixState(t, dut, prefix, false, testResults[index])
-		}
-	}
-}
-
 func validateLocalPreferenceV4(t *testing.T, dut *ondatra.DUTDevice, prefix string, metricValue uint32) {
 	dni := deviations.DefaultNetworkInstance(dut)
 	bgpRIBPath := gnmi.OC().NetworkInstance(dni).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, "BGP").Bgp().Rib()
@@ -1174,10 +1051,6 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 	}
 
 	testResults := [6]bool{true, true, true, true, true, true}
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		awaitBGPReady(t, bs, ipv4, ipv6, ipv41, ipv61)
-		observeExpectedPrefixes(t, dut, testResults)
-	}
 	verifyTrafficV4AndV6(t, bs, testResults)
 
 	// Delete routePolicy policy applied to neighbor
@@ -1194,10 +1067,7 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 
 	testResults1 := [6]bool{false, true, false, false, true, true}
 	configureImportExportMultifacetMatchActionsBGPPolicy(t, bs.DUT, ipv4, ipv6, ipv41, ipv61)
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		awaitBGPReady(t, bs, ipv4, ipv6, ipv41, ipv61)
-		awaitExpectedPrefixes(t, dut, testResults1)
-	} else {
+	if !deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
 		time.Sleep(time.Second * 120)
 	}
 	verifyTrafficV4AndV6(t, bs, testResults1)
