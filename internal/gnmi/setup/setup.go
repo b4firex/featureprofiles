@@ -240,7 +240,7 @@ func BuildBenchmarkingConfig(t *testing.T) *oc.Root {
 
 		isisIntfLevel := isisIntf.GetOrCreateLevel(2)
 		isisIntfLevel.Enabled = ygot.Bool(true)
-		isisIntfLevelAuth := isisIntfLevel.GetOrCreateHelloAuthentication()
+                isisIntfLevelAuth := isisIntfLevel.GetOrCreateHelloAuthentication()
 		isisIntfLevelAuth.Enabled = ygot.Bool(true)
 		isisIntfLevelAuth.AuthPassword = ygot.String(authPassword)
 		isisIntfLevelAuth.AuthMode = oc.IsisTypes_AUTH_MODE_MD5
