@@ -229,7 +229,9 @@ func BuildBenchmarkingConfig(t *testing.T) *oc.Root {
 			intfName = dp.Name() + ".0"
 		}
 		isisIntf := isis.GetOrCreateInterface(intfName)
-		isisIntf.Enabled = ygot.Bool(true)
+		if deviations.ISISLevelEnabled(dut) {
+			isisIntfLevel.Enabled = ygot.Bool(true)
+		}
 		isisIntf.HelloPadding = oc.Isis_HelloPaddingType_ADAPTIVE
 		isisIntf.CircuitType = oc.Isis_CircuitType_POINT_TO_POINT
 		isisIntfAfi := isisIntf.GetOrCreateAf(oc.IsisTypes_AFI_TYPE_IPV4, oc.IsisTypes_SAFI_TYPE_UNICAST)
