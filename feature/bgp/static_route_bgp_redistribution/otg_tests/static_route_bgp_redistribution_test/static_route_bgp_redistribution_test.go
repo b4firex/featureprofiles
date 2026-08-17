@@ -1315,7 +1315,13 @@ func validatePrefixLocalPreference(t *testing.T, ate *ondatra.ATEDevice, isV4 bo
 	if isV4 {
 		prefixPath := gnmi.OTG().BgpPeer(bgpPeerName).UnicastIpv4PrefixAny()
 		prefix, ok := gnmi.WatchAll(t, ate.OTG(), prefixPath.State(), 10*time.Second, func(val *ygnmi.Value[*otgtelemetry.BgpPeer_UnicastIpv4Prefix]) bool {
-			prefix, _ := val.Val()
+			if val == nil {
+				return false
+			}
+			prefix, present := val.Val()
+			if !present || prefix == nil {
+				return false
+			}
 			if prefix.GetAddress() == subnet {
 				foundPrefix = true
 				gotLocalPreference := prefix.GetLocalPreference()
@@ -1372,7 +1378,13 @@ func validatePrefixCommunitySet(t *testing.T, ate *ondatra.ATEDevice, isV4 bool,
 			return false
 		}).Await(t)
 		if !ok {
-			pfx, _ := prefix.Val()
+			if prefix == nil {
+				t.Fatalf("Prefix %v not received on OTG; cannot validate community-set %v", subnet, wantCommunitySet)
+			}
+			pfx, present := prefix.Val()
+			if !present || pfx == nil {
+				t.Fatalf("Prefix %v received without usable telemetry; cannot validate community-set %v", subnet, wantCommunitySet)
+			}
 			var gotCS string
 			for _, community := range pfx.Community {
 				gotCN := community.GetCustomAsNumber()
@@ -1384,7 +1396,13 @@ func validatePrefixCommunitySet(t *testing.T, ate *ondatra.ATEDevice, isV4 bool,
 	} else {
 		prefixPath := gnmi.OTG().BgpPeer(bgpPeerName).UnicastIpv6PrefixAny()
 		prefix, ok := gnmi.WatchAll(t, ate.OTG(), prefixPath.State(), 10*time.Second, func(val *ygnmi.Value[*otgtelemetry.BgpPeer_UnicastIpv6Prefix]) bool {
-			prefix, _ := val.Val()
+			if val == nil {
+				return false
+			}
+			prefix, present := val.Val()
+			if !present || prefix == nil {
+				return false
+			}
 			if prefix.GetAddress() == subnet {
 				foundPrefix = true
 				var gotCommunitySet string
@@ -1399,7 +1417,13 @@ func validatePrefixCommunitySet(t *testing.T, ate *ondatra.ATEDevice, isV4 bool,
 			return false
 		}).Await(t)
 		if !ok {
-			pfx, _ := prefix.Val()
+			if prefix == nil {
+				t.Fatalf("Prefix %v not received on OTG; cannot validate community-set %v", subnet, wantCommunitySet)
+			}
+			pfx, present := prefix.Val()
+			if !present || pfx == nil {
+				t.Fatalf("Prefix %v received without usable telemetry; cannot validate community-set %v", subnet, wantCommunitySet)
+			}
 			var gotCS string
 			for _, community := range pfx.Community {
 				gotCN := community.GetCustomAsNumber()
