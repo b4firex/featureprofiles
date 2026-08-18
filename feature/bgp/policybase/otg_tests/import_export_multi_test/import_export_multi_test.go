@@ -1005,16 +1005,6 @@ func TestImportExportMultifacetMatchActionsBGPPolicy(t *testing.T) {
 	bs := cfgplugins.NewBGPSession(t, cfgplugins.PortCount2, nil)
 	bs.WithEBGP(t, []oc.E_BgpTypes_AFI_SAFI_TYPE{oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST, oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST}, []string{
 		"port1", "port2"}, true, false)
-	if deviations.BgpNeighborDefaultsUnsupported(bs.DUT) {
-		bgp := bs.DUTConf.
-			GetOrCreateNetworkInstance(deviations.DefaultNetworkInstance(bs.DUT)).
-			GetOrCreateProtocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).
-			GetOrCreateBgp()
-		for _, nbr := range bgp.Neighbor {
-			nbr.SetEnabled(true)
-		}
-	}
-
 	if deviations.BgpRibStreamingConfigRequired(dut) {
 		cfgplugins.DeviationBgpRibStreamingConfigRequired(t, dut)
 	}
