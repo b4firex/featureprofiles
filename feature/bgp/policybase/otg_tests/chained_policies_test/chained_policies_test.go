@@ -943,12 +943,6 @@ func (td *testData) advertiseRoutesWithEBGP(t *testing.T) {
 		afisafiv62.GetOrCreateApplyPolicy().SetImportPolicy([]string{"PERMIT-ALL"})
 		afisafiv62.GetOrCreateApplyPolicy().SetExportPolicy([]string{"PERMIT-ALL"})
 	}
-	if deviations.BgpNeighborDefaultsUnsupported(td.dut) {
-		nV41.SetEnabled(true)
-		nV42.SetEnabled(true)
-		nV61.SetEnabled(true)
-		nV62.SetEnabled(true)
-	}
 	gnmi.Update(t, td.dut, gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(td.dut)).Config(), ni)
 
 	// configure eBGP on OTG port1
