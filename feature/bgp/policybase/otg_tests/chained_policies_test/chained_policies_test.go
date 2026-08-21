@@ -261,10 +261,7 @@ func configureImportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetMatchSetOptions(oc.RoutingPolicy_MatchSetOptionsRestrictedType_ANY)
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetPrefixSet(v4PrefixSet)
 
-	pdef2 := pdef1
-	if !deviations.FlattenPolicyWithMultipleStatements(dut) {
-		pdef2 = rp.GetOrCreatePolicyDefinition(v4LPPolicy)
-	}
+	pdef2 := rp.GetOrCreatePolicyDefinition(v4LPPolicy)
 	stmt2, err := pdef2.AppendNewStatement(v4LPStatement)
 	if err != nil {
 		t.Fatalf("AppendNewStatement(%s) failed: %v", v4LPStatement, err)
@@ -286,11 +283,7 @@ func configureImportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	if !deviations.DefaultImportExportPolicyUnsupported(dut) {
 		policy.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 	}
-	if deviations.FlattenPolicyWithMultipleStatements(dut) {
-		policy.SetImportPolicy([]string{v4PrefixPolicy})
-	} else {
-		policy.SetImportPolicy([]string{v4PrefixPolicy, v4LPPolicy})
-	}
+	policy.SetImportPolicy([]string{v4PrefixPolicy, v4LPPolicy})
 	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
 		switch operation {
 		case "set":
@@ -533,10 +526,7 @@ func configureImportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetMatchSetOptions(oc.RoutingPolicy_MatchSetOptionsRestrictedType_ANY)
 	stmt1.GetOrCreateConditions().GetOrCreateMatchPrefixSet().SetPrefixSet(v6PrefixSet)
 
-	pdef2 := pdef1
-	if !deviations.FlattenPolicyWithMultipleStatements(dut) {
-		pdef2 = rp.GetOrCreatePolicyDefinition(v6LPPolicy)
-	}
+	pdef2 := rp.GetOrCreatePolicyDefinition(v6LPPolicy)
 	stmt2, err := pdef2.AppendNewStatement(v6LPStatement)
 	if err != nil {
 		t.Fatalf("AppendNewStatement(%s) failed: %v", v6LPStatement, err)
@@ -560,11 +550,7 @@ func configureImportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 		policy.SetDefaultImportPolicy(oc.RoutingPolicy_DefaultPolicyType_REJECT_ROUTE)
 	}
 
-	if deviations.FlattenPolicyWithMultipleStatements(dut) {
-		policy.SetImportPolicy([]string{v6PrefixPolicy})
-	} else {
-		policy.SetImportPolicy([]string{v6PrefixPolicy, v6LPPolicy})
-	}
+	policy.SetImportPolicy([]string{v6PrefixPolicy, v6LPPolicy})
 	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
 		switch operation {
 		case "set":
