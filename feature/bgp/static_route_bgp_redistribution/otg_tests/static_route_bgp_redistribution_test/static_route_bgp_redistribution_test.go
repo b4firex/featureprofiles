@@ -257,7 +257,12 @@ func configureDUTBGP(t *testing.T, dut *ondatra.DUTDevice) {
 	bgpPeerGroup.SetPeerAs(dutAsn)
 
 	if deviations.SkipBgpSendCommunityType(dut) {
-		if !deviations.SkipBgpPeerGroupSendCommunityType(dut) {
+		if deviations.BgpPeerGroupSendCommunityRequiresAfiSafi(dut) {
+			bgpPeerGroup.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).
+				SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
+			bgpPeerGroup.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).
+				SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
+		} else if !deviations.SkipBgpPeerGroupSendCommunityType(dut) {
 			bgpPeerGroup.SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
 		}
 	}
@@ -1065,12 +1070,12 @@ func redistributeStaticRoutePolicyWithCommunitySet(t *testing.T, dut *ondatra.DU
 	communitySetPolicyDefinition := communitySet.GetOrCreateDefinedSets().GetOrCreateBgpDefinedSets().GetOrCreateCommunitySet(communitySetName)
 	communitySetPolicyDefinition.SetCommunityMember([]oc.RoutingPolicy_DefinedSets_BgpDefinedSets_CommunitySet_CommunityMember_Union{oc.UnionString("64512:100")})
 
-	// Delete the referenced import policy under table connection before replacing the policy.
-	addressFamily := oc.Types_ADDRESS_FAMILY_IPV4
-	if !isV4 {
-		addressFamily = oc.Types_ADDRESS_FAMILY_IPV6
+	// Detach the referenced import policy under table connection before replacing the policy.
+	if isV4 {
+		clearTableConnectionImportPolicy(t, dut, oc.Types_ADDRESS_FAMILY_IPV4)
+	} else {
+		clearTableConnectionImportPolicy(t, dut, oc.Types_ADDRESS_FAMILY_IPV6)
 	}
-	clearTableConnectionImportPolicy(t, dut, addressFamily)
 
 	gnmi.Replace(t, dut, policyPath.Config(), redistributePolicyDefinition)
 	gnmi.Replace(t, dut, communityPath.Config(), communitySetPolicyDefinition)
