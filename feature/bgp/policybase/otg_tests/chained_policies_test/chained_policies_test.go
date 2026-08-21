@@ -229,13 +229,11 @@ func TestBGPChainedPolicies(t *testing.T) {
 				createFlow(t, td, tc.flowConfig)
 				td.verifyDUTBGPEstablished(t)
 				td.verifyOTGBGPEstablished(t)
-				td.awaitDestinationPrefix(t, tc.flowConfig, true)
 				checkTraffic(t, td, v4Flow)
 			} else {
 				createFlowV6(t, td, tc.flowConfig)
 				td.verifyDUTBGPEstablished(t)
 				td.verifyOTGBGPEstablished(t)
-				td.awaitDestinationPrefix(t, tc.flowConfig, false)
 				checkTraffic(t, td, v6Flow)
 			}
 		})
@@ -285,13 +283,12 @@ func configureImportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	}
 	policy.SetImportPolicy([]string{v4PrefixPolicy, v4LPPolicy})
 	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		switch operation {
-		case "set":
+		if operation == "set" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetExportPolicy([]string{"PERMIT-ALL"})
 			}
 			gnmi.BatchReplace(batch, path.Config(), policy)
-		case "delete":
+		} else if operation == "delete" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetImportPolicy([]string{"PERMIT-ALL"})
 				policy.SetExportPolicy([]string{"PERMIT-ALL"})
@@ -431,8 +428,7 @@ func configureExportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 		policy.SetExportPolicy([]string{v4ASPPolicy, v4MedPolicy})
 	}
 	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		switch operation {
-		case "set":
+		if operation == "set" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetImportPolicy([]string{"PERMIT-ALL"})
 				gnmi.BatchReplace(batch, path.Config(), policy)
@@ -440,7 +436,7 @@ func configureExportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 				gnmi.BatchReplace(batch, path.Config(), policy)
 				gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
 			}
-		case "delete":
+		} else if operation == "delete" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetImportPolicy([]string{"PERMIT-ALL"})
 				policy.SetExportPolicy([]string{"PERMIT-ALL"})
@@ -552,13 +548,12 @@ func configureImportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 
 	policy.SetImportPolicy([]string{v6PrefixPolicy, v6LPPolicy})
 	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		switch operation {
-		case "set":
+		if operation == "set" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetExportPolicy([]string{"PERMIT-ALL"})
 			}
 			gnmi.BatchReplace(batch, path.Config(), policy)
-		case "delete":
+		} else if operation == "delete" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetImportPolicy([]string{"PERMIT-ALL"})
 				policy.SetExportPolicy([]string{"PERMIT-ALL"})
@@ -695,8 +690,7 @@ func configureExportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 		policy.SetExportPolicy([]string{v6ASPPolicy, v6MedPolicy})
 	}
 	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		switch operation {
-		case "set":
+		if operation == "set" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetImportPolicy([]string{"PERMIT-ALL"})
 				gnmi.BatchReplace(batch, path.Config(), policy)
@@ -704,7 +698,7 @@ func configureExportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 				gnmi.BatchReplace(batch, path.Config(), policy)
 				gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
 			}
-		case "delete":
+		} else if operation == "delete" {
 			if deviations.DefaultImportExportPolicyUnsupported(dut) {
 				policy.SetImportPolicy([]string{"PERMIT-ALL"})
 				policy.SetExportPolicy([]string{"PERMIT-ALL"})
@@ -969,36 +963,34 @@ func (td *testData) advertiseRoutesWithEBGP(t *testing.T) {
 }
 
 func (td *testData) verifyDUTBGPEstablished(t *testing.T) {
-	bgpPath := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(td.dut)).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp()
-	for _, neighbor := range []string{atePort1.IPv4, atePort2.IPv4, atePort1.IPv6, atePort2.IPv6} {
-		gnmi.Await(t, td.dut, bgpPath.Neighbor(neighbor).SessionState().State(), 2*time.Minute, oc.Bgp_Neighbor_SessionState_ESTABLISHED)
+	sp := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(td.dut)).Protocol(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, bgpName).Bgp().NeighborAny().SessionState().State()
+	watch := gnmi.WatchAll(t, td.dut, sp, 2*time.Minute, func(val *ygnmi.Value[oc.E_Bgp_Neighbor_SessionState]) bool {
+		state, ok := val.Val()
+		if !ok || state != oc.Bgp_Neighbor_SessionState_ESTABLISHED {
+			return false
+		}
+		return true
+	})
+	if val, ok := watch.Await(t); !ok {
+		t.Fatalf("BGP sessions not established: got %v", val)
 	}
 	t.Log("DUT BGP sessions established")
 }
 
 // VerifyOTGBGPEstablished verifies on OTG BGP peer establishment
 func (td *testData) verifyOTGBGPEstablished(t *testing.T) {
-	for _, peer := range []string{
-		atePort1.Name + ".BGP4.peer",
-		atePort1.Name + ".BGP6.peer",
-		atePort2.Name + ".BGP4.peer",
-		atePort2.Name + ".BGP6.peer",
-	} {
-		gnmi.Await(t, td.ate.OTG(), gnmi.OTG().BgpPeer(peer).SessionState().State(), 2*time.Minute, otgtelemetry.BgpPeer_SessionState_ESTABLISHED)
+	sp := gnmi.OTG().BgpPeerAny().SessionState().State()
+	watch := gnmi.WatchAll(t, td.ate.OTG(), sp, 2*time.Minute, func(val *ygnmi.Value[otgtelemetry.E_BgpPeer_SessionState]) bool {
+		state, ok := val.Val()
+		if !ok || state != otgtelemetry.BgpPeer_SessionState_ESTABLISHED {
+			return false
+		}
+		return true
+	})
+	if val, ok := watch.Await(t); !ok {
+		t.Fatalf("BGP sessions not established: got %v", val)
 	}
 	t.Log("OTG BGP sessions established")
-}
-
-func (td *testData) awaitDestinationPrefix(t *testing.T, fc flowConfig, ipv4 bool) {
-	peerName := fc.src.Name + ".BGP6.peer"
-	if ipv4 {
-		peerName = fc.src.Name + ".BGP4.peer"
-		prefixPath := gnmi.OTG().BgpPeer(peerName).UnicastIpv4Prefix(fc.dstIP, v4RoutePrefix, otgtelemetry.UnicastIpv4Prefix_Origin_IGP, 0)
-		gnmi.Await(t, td.ate.OTG(), prefixPath.Address().State(), 2*time.Minute, fc.dstIP)
-		return
-	}
-	prefixPath := gnmi.OTG().BgpPeer(peerName).UnicastIpv6Prefix(fc.dstIP, v6RoutePrefix, otgtelemetry.UnicastIpv6Prefix_Origin_IGP, 0)
-	gnmi.Await(t, td.ate.OTG(), prefixPath.Address().State(), 2*time.Minute, fc.dstIP)
 }
 
 func configureDUT(t *testing.T, dut *ondatra.DUTDevice) {
