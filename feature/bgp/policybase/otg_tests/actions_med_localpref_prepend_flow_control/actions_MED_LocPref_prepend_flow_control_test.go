@@ -641,7 +641,7 @@ func TestBGPPolicy(t *testing.T) {
 		policyValue                                                 string
 		port1v4Prefix, port1v6Prefix, port2v4Prefix, port2v6Prefix  string
 		isDeletePolicy                                              bool
-		metricValue, asn                                            uint32
+		metricValue, metricValuePort2, asn                          uint32
 		deleteNbrv4, deleteNbrv6                                    string
 		polNbrv4, polNbrv6                                          string
 	}{{
@@ -665,25 +665,26 @@ func TestBGPPolicy(t *testing.T) {
 		deleteNbrv6:     atePort1.IPv6,
 		asn:             dutAS,
 	}, {
-		desc:            "Configure eBGP increase MED Import Export Policy",
-		rpPolicy:        setMEDPolicy,
-		policyTypePort1: "",
-		policyValue:     "+100",
-		policyStatement: matchStatement1,
-		defPolicyPort1:  defAcceptRoute,
-		defPolicyPort2:  defRejectRoute,
-		policyTypePort2: setMEDPolicy,
-		port1v4Prefix:   advertisedRoutesv4Net2,
-		port1v6Prefix:   advertisedRoutesv6Net2,
-		port2v4Prefix:   advertisedRoutesv4Net1,
-		port2v6Prefix:   advertisedRoutesv6Net1,
-		metricValue:     expectedMED(t, dut, 150, 100),
-		polNbrv4:        atePort2.IPv4,
-		polNbrv6:        atePort2.IPv6,
-		isDeletePolicy:  true,
-		deleteNbrv4:     atePort1.IPv4,
-		deleteNbrv6:     atePort1.IPv6,
-		asn:             dutAS,
+		desc:             "Configure eBGP increase MED Import Export Policy",
+		rpPolicy:         setMEDPolicy,
+		policyTypePort1:  "",
+		policyValue:      "+100",
+		policyStatement:  matchStatement1,
+		defPolicyPort1:   defAcceptRoute,
+		defPolicyPort2:   defRejectRoute,
+		policyTypePort2:  setMEDPolicy,
+		port1v4Prefix:    advertisedRoutesv4Net2,
+		port1v6Prefix:    advertisedRoutesv6Net2,
+		port2v4Prefix:    advertisedRoutesv4Net1,
+		port2v6Prefix:    advertisedRoutesv6Net1,
+		metricValue:      expectedMED(t, dut, 150, 100),
+		metricValuePort2: 100,
+		polNbrv4:         atePort2.IPv4,
+		polNbrv6:         atePort2.IPv6,
+		isDeletePolicy:   true,
+		deleteNbrv4:      atePort1.IPv4,
+		deleteNbrv6:      atePort1.IPv6,
+		asn:              dutAS,
 	}, {
 		desc:            "Configure iBGP set Local Preference Import Export Policy",
 		rpPolicy:        setLocalPrefPolicy,
@@ -796,11 +797,16 @@ func TestBGPPolicy(t *testing.T) {
 			verifyBgpPolicyTelemetry(t, dut, atePort2.IPv4, tc.defPolicyPort2, tc.policyTypePort2, true)
 			verifyBgpPolicyTelemetry(t, dut, atePort2.IPv6, tc.defPolicyPort2, tc.policyTypePort2, false)
 
+			metricValuePort2 := tc.metricValue
+			if tc.metricValuePort2 != 0 {
+				metricValuePort2 = tc.metricValuePort2
+			}
+
 			// Validate Prefixes
 			validateOTGBgpPrefixV4AndASLocalPrefMED(t, otg, dut, otgConfig, atePort1.Name+".BGP4.peer", tc.port1v4Prefix, advertisedRoutesv4PrefixLen, tc.rpPolicy, tc.metricValue)
 			validateOTGBgpPrefixV6AndASLocalPrefMED(t, otg, dut, otgConfig, atePort1.Name+".BGP6.peer", tc.port1v6Prefix, advertisedRoutesv6PrefixLen, tc.rpPolicy, tc.metricValue)
-			validateOTGBgpPrefixV4AndASLocalPrefMED(t, otg, dut, otgConfig, atePort2.Name+".BGP4.peer", tc.port2v4Prefix, advertisedRoutesv4PrefixLen, tc.rpPolicy, tc.metricValue)
-			validateOTGBgpPrefixV6AndASLocalPrefMED(t, otg, dut, otgConfig, atePort2.Name+".BGP6.peer", tc.port2v6Prefix, advertisedRoutesv6PrefixLen, tc.rpPolicy, tc.metricValue)
+			validateOTGBgpPrefixV4AndASLocalPrefMED(t, otg, dut, otgConfig, atePort2.Name+".BGP4.peer", tc.port2v4Prefix, advertisedRoutesv4PrefixLen, tc.rpPolicy, metricValuePort2)
+			validateOTGBgpPrefixV6AndASLocalPrefMED(t, otg, dut, otgConfig, atePort2.Name+".BGP6.peer", tc.port2v6Prefix, advertisedRoutesv6PrefixLen, tc.rpPolicy, metricValuePort2)
 		})
 	}
 }
