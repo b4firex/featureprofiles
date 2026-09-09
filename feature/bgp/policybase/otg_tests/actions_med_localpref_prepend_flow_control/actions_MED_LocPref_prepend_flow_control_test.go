@@ -659,15 +659,15 @@ func TestBGPPolicy(t *testing.T) {
 		port2v6Prefix:   advertisedRoutesv6Net1,
 		metricValue:     100,
 		polNbrv4:        atePort2.IPv4,
-		polNbrv6:        atePort2.IPv6,
 		isDeletePolicy:  true,
 		deleteNbrv4:     atePort1.IPv4,
+		polNbrv6:        atePort2.IPv6,
 		deleteNbrv6:     atePort1.IPv6,
 		asn:             dutAS,
 	}, {
 		desc:            "Configure eBGP increase MED Import Export Policy",
 		rpPolicy:        setMEDPolicy,
-		policyTypePort1: "",
+		policyTypePort1: setMEDPolicy,
 		policyValue:     "+100",
 		policyStatement: matchStatement1,
 		defPolicyPort1:  defAcceptRoute,
@@ -677,13 +677,13 @@ func TestBGPPolicy(t *testing.T) {
 		port1v6Prefix:   advertisedRoutesv6Net2,
 		port2v4Prefix:   advertisedRoutesv4Net1,
 		port2v6Prefix:   advertisedRoutesv6Net1,
-		metricValue:     expectedMED(t, dut, 150, 100),
+		metricValue:     expectedMED(t, dut, 250, 100),
 		polNbrv4:        atePort2.IPv4,
 		polNbrv6:        atePort2.IPv6,
 		isDeletePolicy:  true,
 		deleteNbrv4:     atePort1.IPv4,
 		deleteNbrv6:     atePort1.IPv6,
-		asn:             dutAS,	
+		asn:             dutAS,
 	}, {
 		desc:            "Configure iBGP set Local Preference Import Export Policy",
 		rpPolicy:        setLocalPrefPolicy,
@@ -769,7 +769,7 @@ func TestBGPPolicy(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			// Delete BGP import export policy
 			if tc.isDeletePolicy {
-				deleteBGPImportExportPolicy(t, dut, tc.deleteNbrv4, tc.deleteNbrv6, atePort2.IPv4, atePort2.IPv6)
+				deleteBGPImportExportPolicy(t, dut, atePort1.IPv4, atePort1.IPv6, atePort2.IPv4, atePort2.IPv6)
 			}
 
 			// Configure Routing Policy on the DUT.
@@ -789,6 +789,9 @@ func TestBGPPolicy(t *testing.T) {
 			}
 			// Configure BGP import export policy
 			configureBGPImportExportPolicy(t, dut, tc.polNbrv4, tc.polNbrv6, tc.rpPolicy)
+			if tc.policyTypePort1 == setMEDPolicy {
+				configureBGPImportExportPolicy(t, dut, atePort1.IPv4, atePort1.IPv6, tc.rpPolicy)
+			}
 
 			// Verify BGP policy
 			verifyBgpPolicyTelemetry(t, dut, atePort1.IPv4, tc.defPolicyPort1, tc.policyTypePort1, true)
