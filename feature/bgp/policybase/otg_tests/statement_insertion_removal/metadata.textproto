@@ -26,12 +26,4 @@ platform_exceptions:  {
     default_network_instance:  "default"
   }
 }
-platform_exceptions:  {
-  platform:  {
-    vendor:  CISCO
-  }
-  deviations:  {
-    bgp_peer_group_send_community_requires_afi_safi: true
-  }
-}
 tags:  TAGS_DATACENTER_EDGE
