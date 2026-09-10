@@ -289,32 +289,21 @@ func configureImportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	} else {
 		policy.SetImportPolicy([]string{v4PrefixPolicy, v4LPPolicy})
 	}
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		if operation == "set" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetExportPolicy([]string{"PERMIT-ALL"})
-			}
-			gnmi.BatchReplace(batch, path.Config(), policy)
-		} else if operation == "delete" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetImportPolicy([]string{"PERMIT-ALL"})
-				policy.SetExportPolicy([]string{"PERMIT-ALL"})
-				gnmi.BatchReplace(batch, path.Config(), policy)
-			} else {
-				gnmi.BatchDelete(batch, path.Config())
-			}
+	if operation == "set" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetExportPolicy([]string{"PERMIT-ALL"})
 		}
-		batch.Set(t, dut)
-	} else if deviations.SkipSettingStatementForPolicy(dut) {
-		gnmi.Update(t, dut, path.Config(), policy)
-	} else {
-		if operation == "set" {
+		gnmi.BatchReplace(batch, path.Config(), policy)
+	} else if operation == "delete" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetImportPolicy([]string{"PERMIT-ALL"})
+			policy.SetExportPolicy([]string{"PERMIT-ALL"})
 			gnmi.BatchReplace(batch, path.Config(), policy)
-		} else if operation == "delete" {
+		} else {
 			gnmi.BatchDelete(batch, path.Config())
 		}
-		batch.Set(t, dut)
 	}
+	batch.Set(t, dut)
 	// Sleep for 5 second to ensure that OTG has received the update packet
 	time.Sleep(time.Second * 5)
 }
@@ -434,38 +423,25 @@ func configureExportRoutingPolicy(t *testing.T, dut *ondatra.DUTDevice, operatio
 	} else {
 		policy.SetExportPolicy([]string{v4ASPPolicy, v4MedPolicy})
 	}
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		if operation == "set" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetImportPolicy([]string{"PERMIT-ALL"})
-				gnmi.BatchReplace(batch, path.Config(), policy)
-			} else {
-				gnmi.BatchReplace(batch, path.Config(), policy)
-				gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
-			}
-		} else if operation == "delete" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetImportPolicy([]string{"PERMIT-ALL"})
-				policy.SetExportPolicy([]string{"PERMIT-ALL"})
-				gnmi.BatchReplace(batch, path.Config(), policy)
-			} else {
-				gnmi.BatchDelete(batch, path.Config())
-				gnmi.BatchDelete(batch, importPolPath.Config())
-			}
-		}
-		batch.Set(t, dut)
-	} else if deviations.SkipSettingStatementForPolicy(dut) {
-		gnmi.Update(t, dut, path.Config(), policy)
-	} else {
-		if operation == "set" {
+	if operation == "set" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetImportPolicy([]string{"PERMIT-ALL"})
+			gnmi.BatchReplace(batch, path.Config(), policy)
+		} else {
 			gnmi.BatchReplace(batch, path.Config(), policy)
 			gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
-		} else if operation == "delete" {
+		}
+	} else if operation == "delete" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetImportPolicy([]string{"PERMIT-ALL"})
+			policy.SetExportPolicy([]string{"PERMIT-ALL"})
+			gnmi.BatchReplace(batch, path.Config(), policy)
+		} else {
 			gnmi.BatchDelete(batch, path.Config())
 			gnmi.BatchDelete(batch, importPolPath.Config())
 		}
-		batch.Set(t, dut)
 	}
+	batch.Set(t, dut)
 	time.Sleep(time.Second * 60)
 }
 
@@ -561,32 +537,21 @@ func configureImportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 	} else {
 		policy.SetImportPolicy([]string{v6PrefixPolicy, v6LPPolicy})
 	}
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		if operation == "set" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetExportPolicy([]string{"PERMIT-ALL"})
-			}
-			gnmi.BatchReplace(batch, path.Config(), policy)
-		} else if operation == "delete" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetImportPolicy([]string{"PERMIT-ALL"})
-				policy.SetExportPolicy([]string{"PERMIT-ALL"})
-				gnmi.BatchReplace(batch, path.Config(), policy)
-			} else {
-				gnmi.BatchDelete(batch, path.Config())
-			}
+	if operation == "set" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetExportPolicy([]string{"PERMIT-ALL"})
 		}
-		batch.Set(t, dut)
-	} else if deviations.SkipSettingStatementForPolicy(dut) {
-		gnmi.Update(t, dut, path.Config(), policy)
-	} else {
-		if operation == "set" {
+		gnmi.BatchReplace(batch, path.Config(), policy)
+	} else if operation == "delete" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetImportPolicy([]string{"PERMIT-ALL"})
+			policy.SetExportPolicy([]string{"PERMIT-ALL"})
 			gnmi.BatchReplace(batch, path.Config(), policy)
-		} else if operation == "delete" {
+		} else {
 			gnmi.BatchDelete(batch, path.Config())
 		}
-		batch.Set(t, dut)
 	}
+	batch.Set(t, dut)
 	time.Sleep(time.Second * 60)
 }
 
@@ -703,38 +668,25 @@ func configureExportRoutingPolicyV6(t *testing.T, dut *ondatra.DUTDevice, operat
 	} else {
 		policy.SetExportPolicy([]string{v6ASPPolicy, v6MedPolicy})
 	}
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		if operation == "set" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetImportPolicy([]string{"PERMIT-ALL"})
-				gnmi.BatchReplace(batch, path.Config(), policy)
-			} else {
-				gnmi.BatchReplace(batch, path.Config(), policy)
-				gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
-			}
-		} else if operation == "delete" {
-			if deviations.DefaultImportExportPolicyUnsupported(dut) {
-				policy.SetImportPolicy([]string{"PERMIT-ALL"})
-				policy.SetExportPolicy([]string{"PERMIT-ALL"})
-				gnmi.BatchReplace(batch, path.Config(), policy)
-			} else {
-				gnmi.BatchDelete(batch, path.Config())
-				gnmi.BatchDelete(batch, importPolPath.Config())
-			}
-		}
-		batch.Set(t, dut)
-	} else if deviations.SkipSettingStatementForPolicy(dut) {
-		gnmi.Update(t, dut, path.Config(), policy)
-	} else {
-		if operation == "set" {
+	if operation == "set" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetImportPolicy([]string{"PERMIT-ALL"})
+			gnmi.BatchReplace(batch, path.Config(), policy)
+		} else {
 			gnmi.BatchReplace(batch, path.Config(), policy)
 			gnmi.BatchReplace(batch, importPolPath.Config(), eBGPPeerPolicy)
-		} else if operation == "delete" {
+		}
+	} else if operation == "delete" {
+		if deviations.DefaultImportExportPolicyUnsupported(dut) {
+			policy.SetImportPolicy([]string{"PERMIT-ALL"})
+			policy.SetExportPolicy([]string{"PERMIT-ALL"})
+			gnmi.BatchReplace(batch, path.Config(), policy)
+		} else {
 			gnmi.BatchDelete(batch, path.Config())
 			gnmi.BatchDelete(batch, importPolPath.Config())
 		}
-		batch.Set(t, dut)
 	}
+	batch.Set(t, dut)
 	time.Sleep(time.Second * 60)
 }
 
