@@ -248,23 +248,18 @@ func configureDUTBGP(t *testing.T, dut *ondatra.DUTDevice) {
 	bgpGlobalIPv6AF := bgpGlobal.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST)
 	bgpGlobalIPv6AF.SetEnabled(true)
 
-	if !deviations.SkipBgpSendCommunityType(dut) {
-		bgpGlobalIPv6AF.SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
-		bgpGlobalIPv4AF.SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
-	}
-
 	bgpPeerGroup := bgp.GetOrCreatePeerGroup(peerGroupName)
 	bgpPeerGroup.SetPeerAs(dutAsn)
 
 	if deviations.SkipBgpSendCommunityType(dut) {
-		if deviations.BgpPeerGroupSendCommunityRequiresAfiSafi(dut) {
-			bgpPeerGroup.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).
-				SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
-			bgpPeerGroup.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).
-				SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
-		} else if !deviations.SkipBgpPeerGroupSendCommunityType(dut) {
+		if !deviations.SkipBgpPeerGroupSendCommunityType(dut) {
 			bgpPeerGroup.SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
 		}
+	} else {
+		bgpPeerGroup.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST).
+			SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
+		bgpPeerGroup.GetOrCreateAfiSafi(oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST).
+			SetSendCommunityType([]oc.E_Bgp_CommunityType{oc.Bgp_CommunityType_STANDARD})
 	}
 
 	// dutPort1 -> atePort1 peer (ebgp session)
@@ -481,9 +476,7 @@ func configureTableConnection(t *testing.T, dut *ondatra.DUTDevice, isV4, mPropa
 		tc.SetDisableMetricPropagation(!mPropagation)
 	}
 
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		gnmi.BatchReplace(batchSet, niPath.TableConnection(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_STATIC, oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, addressFamily).Config(), tc)
-	} else if deviations.EnableTableConnections(dut) {
+	if deviations.EnableTableConnections(dut) {
 		fptest.ConfigEnableTbNative(t, dut)
 		gnmi.BatchUpdate(batchSet, niPath.TableConnection(oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_STATIC, oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP, addressFamily).Config(), tc)
 	} else {
@@ -629,13 +622,13 @@ func clearTableConnectionImportPolicy(t *testing.T, dut *ondatra.DUTDevice, addr
 		oc.PolicyTypes_INSTALL_PROTOCOL_TYPE_BGP,
 		addressFamily,
 	)
-	if deviations.BgpPolicyLeafListsRequireParentReplace(dut) {
-		tableConn := gnmi.Get[*oc.NetworkInstance_TableConnection](t, dut, tableConnPath.Config())
-		tableConn.ImportPolicy = nil
-		gnmi.Replace(t, dut, tableConnPath.Config(), tableConn)
+	if deviations.EnableTableConnections(dut) {
+		gnmi.Delete(t, dut, tableConnPath.ImportPolicy().Config())
 		return
 	}
-	gnmi.Delete(t, dut, tableConnPath.ImportPolicy().Config())
+	tableConn := gnmi.Get[*oc.NetworkInstance_TableConnection](t, dut, tableConnPath.Config())
+	tableConn.ImportPolicy = nil
+	gnmi.Replace(t, dut, tableConnPath.Config(), tableConn)
 }
 
 // Validate configurations for table-connections and routing-policy
