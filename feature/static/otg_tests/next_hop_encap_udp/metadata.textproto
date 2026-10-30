@@ -21,3 +21,15 @@ platform_exceptions: {
     nexthop_group_pseudowire_counters_oc_unsupported: true
   }
 }
+platform_exceptions: {
+  platform: {
+    vendor: CISCO
+  }
+  deviations: {
+    default_bgp_instance_name: "default"
+    interface_enabled: true
+    ipv4_missing_enabled: true
+    load_balance_policy_oc_unsupported: true
+    static_route_to_nhg_oc_unsupported: true
+  }
+}

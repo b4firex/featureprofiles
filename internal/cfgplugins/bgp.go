@@ -335,8 +335,58 @@ func (bs *BGPSession) WithEBGP(t *testing.T, afiTypes []oc.E_BgpTypes_AFI_SAFI_T
 		}
 	}
 
-	niProtocol := bs.DUTConf.GetOrCreateNetworkInstance(bs.networkInstance).GetOrCreateProtocol(PTBGP, bgpName)
+	niProtocol := bs.DUTConf.GetOrCreateNetworkInstance(bs.networkInstance).GetOrCreateProtocol(PTBGP, deviations.DefaultBgpInstanceName(bs.DUT))
 	neighborConfig := bs.buildNeigborConfig(isSamePG, isSameAS, bgpPorts)
+	niProtocol.Bgp = BuildBGPOCConfig(t, bs.DUT, dutPort1.IPv4, afiTypes, neighborConfig)
+
+	err := bs.configureRoutingPolicy()
+	if err != nil {
+		t.Fatalf("Failed to configure routing policy: %v", err)
+	}
+
+	return bs
+}
+
+// WithIBGP adds iBGP specific config.
+func (bs *BGPSession) WithIBGP(t *testing.T, afiTypes []oc.E_BgpTypes_AFI_SAFI_TYPE, bgpPorts []string, isSamePG bool) *BGPSession {
+	for _, afiType := range afiTypes {
+		if afiType != oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST && afiType != oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST {
+			t.Fatalf("Unsupported AFI type: %v", afiType)
+		}
+	}
+	bs.afiTypes = afiTypes
+
+	devices := bs.ATETop.Devices().Items()
+	byName := func(i, j int) bool { return devices[i].Name() < devices[j].Name() }
+	sort.Slice(devices, byName)
+	for i, otgPort := range bs.ATEPorts {
+		if !containsValue(bgpPorts, otgPort.Name) {
+			continue
+		}
+		bgp := devices[i].Bgp().SetRouterId(otgPort.IPv4)
+
+		for _, afiType := range afiTypes {
+			switch afiType {
+			case oc.BgpTypes_AFI_SAFI_TYPE_IPV4_UNICAST:
+				ipv4 := devices[i].Ethernets().Items()[0].Ipv4Addresses().Items()[0]
+				bgp4Peer := bgp.Ipv4Interfaces().Add().SetIpv4Name(ipv4.Name()).Peers().Add().SetName(devices[i].Name() + ".BGP4.peer")
+				bgp4Peer.SetPeerAddress(ipv4.Gateway())
+				bgp4Peer.SetAsNumber(DutAS)
+				bgp4Peer.SetAsType(gosnappi.BgpV4PeerAsType.IBGP)
+				bgp4Peer.LearnedInformationFilter().SetUnicastIpv4Prefix(true)
+			case oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST:
+				ipv6 := devices[i].Ethernets().Items()[0].Ipv6Addresses().Items()[0]
+				bgp6Peer := bgp.Ipv6Interfaces().Add().SetIpv6Name(ipv6.Name()).Peers().Add().SetName(devices[i].Name() + ".BGP6.peer")
+				bgp6Peer.SetPeerAddress(ipv6.Gateway())
+				bgp6Peer.SetAsNumber(DutAS)
+				bgp6Peer.SetAsType(gosnappi.BgpV6PeerAsType.IBGP)
+				bgp6Peer.LearnedInformationFilter().SetUnicastIpv6Prefix(true)
+			}
+		}
+	}
+
+	niProtocol := bs.DUTConf.GetOrCreateNetworkInstance(bs.networkInstance).GetOrCreateProtocol(PTBGP, deviations.DefaultBgpInstanceName(bs.DUT))
+	neighborConfig := bs.buildNeigborConfig(isSamePG, true, bgpPorts)
 	niProtocol.Bgp = BuildBGPOCConfig(t, bs.DUT, dutPort1.IPv4, afiTypes, neighborConfig)
 
 	err := bs.configureRoutingPolicy()
@@ -423,7 +473,7 @@ func VerifyDUTBGPEstablished(t *testing.T, dut *ondatra.DUTDevice, opts ...Verif
 			dni = opts[0].NetworkInstance
 		}
 	}
-	nSessionState := gnmi.OC().NetworkInstance(dni).Protocol(PTBGP, bgpName).Bgp().NeighborAny().SessionState().State()
+	nSessionState := gnmi.OC().NetworkInstance(dni).Protocol(PTBGP, deviations.DefaultBgpInstanceName(dut)).Bgp().NeighborAny().SessionState().State()
 	watch := gnmi.WatchAll(t, dut, nSessionState, timeout, func(val *ygnmi.Value[oc.E_Bgp_Neighbor_SessionState]) bool {
 		state, ok := val.Val()
 		if !ok || state != oc.Bgp_Neighbor_SessionState_ESTABLISHED {

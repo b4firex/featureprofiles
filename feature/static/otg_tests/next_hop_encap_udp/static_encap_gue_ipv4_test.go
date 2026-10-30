@@ -2,6 +2,7 @@ package staticencapgueipv4_test
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/openconfig/featureprofiles/internal/cfgplugins"
 	"github.com/openconfig/featureprofiles/internal/deviations"
 	"github.com/openconfig/featureprofiles/internal/fptest"
+	"github.com/openconfig/featureprofiles/internal/helpers"
 	otgconfighelpers "github.com/openconfig/featureprofiles/internal/otg_helpers/otg_config_helpers"
 	"github.com/openconfig/featureprofiles/internal/otgutils"
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
@@ -22,6 +24,7 @@ import (
 	"github.com/openconfig/ondatra/gnmi/oc"
 	"github.com/openconfig/ondatra/netutil"
 	"github.com/openconfig/ondatra/otg"
+	"github.com/openconfig/ygnmi/ygnmi"
 )
 
 const (
@@ -141,14 +144,30 @@ var (
 		IPv4Len:     plenIPv4,
 		MAC:         "02:00:00:00:02:02",
 	}
-
-	dutPort1Mac string
 )
 
 var capturePorts = []string{"port2", "port3", "port4", "port5"}
 
 func TestMain(m *testing.M) {
 	fptest.RunTests(m)
+}
+
+func capturePortsForDUT(t *testing.T, dut *ondatra.DUTDevice, ports []string) []string {
+	t.Helper()
+	if dut.Vendor() == ondatra.CISCO && len(ports) > 1 {
+		t.Logf("Cisco OTG capture is limited to one port per Ixia resource group; capturing %s only", ports[0])
+		return []string{ports[0]}
+	}
+	return ports
+}
+
+func containsString(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
+			return true
+		}
+	}
+	return false
 }
 
 func mustConfigureDUT(t *testing.T, dut *ondatra.DUTDevice) {
@@ -195,6 +214,8 @@ func mustConfigureDUT(t *testing.T, dut *ondatra.DUTDevice) {
 		Prefix:           staticpnhIPv6,
 		NexthopGroup:     true,
 		NexthopGroupName: nexthopGroupName,
+		NextHopAddr:      gueDstIPv6,
+		SourceIP:         dutPort1.IPv6,
 		T:                t,
 		TrafficType:      oc.Aft_EncapsulationHeaderType_UDPV4,
 		PolicyName:       GuePolicyName,
@@ -211,6 +232,8 @@ func mustConfigureDUT(t *testing.T, dut *ondatra.DUTDevice) {
 		Prefix:           staticpnhIPv6,
 		NexthopGroup:     true,
 		NexthopGroupName: nexthopGroupNameV6,
+		NextHopAddr:      gueDstIPv6,
+		SourceIP:         dutPort1.IPv6,
 		T:                t,
 		TrafficType:      oc.Aft_EncapsulationHeaderType_UDPV6,
 		PolicyName:       GuePolicyName,
@@ -228,6 +251,12 @@ func mustConfigureDUT(t *testing.T, dut *ondatra.DUTDevice) {
 // configureGueTunnel configures a GUE tunnel with optional ToS and TTL.
 func configureGueEncap(t *testing.T, dut *ondatra.DUTDevice, dstAddr []string, ttl uint8) {
 	t.Helper()
+	if dut.Vendor() == ondatra.CISCO && deviations.StaticRouteToNHGOCUnsupported(dut) {
+		return // The Cisco static GUE route is configured by NewStaticRouteCfg below.
+	}
+	if !deviations.NextHopGroupOCUnsupported(dut) {
+		t.Fatal("static next-hop OC schema does not provide UDPv6 tunnel configuration")
+	}
 	d := &oc.Root{}
 	ni := d.GetOrCreateNetworkInstance(deviations.DefaultNetworkInstance(dut))
 
@@ -282,6 +311,12 @@ type tunnelCfg struct {
 
 func configureTosTtlOnTunnel(t *testing.T, dut *ondatra.DUTDevice, cfg *tunnelCfg) {
 	t.Helper()
+	if dut.Vendor() == ondatra.CISCO && deviations.StaticRouteToNHGOCUnsupported(dut) {
+		t.Fatalf("no Cisco static GUEv6 per-tunnel ToS/TTL configuration is implemented; requested ToS 0x%X, TTL %d", cfg.tos, cfg.ttl)
+	}
+	if !deviations.NextHopGroupOCUnsupported(dut) {
+		t.Fatal("static next-hop OC schema does not provide UDPv6 tunnel configuration")
+	}
 
 	d := &oc.Root{}
 	ni := d.GetOrCreateNetworkInstance(deviations.DefaultNetworkInstance(dut))
@@ -368,10 +403,10 @@ func createFlow(otgConfig gosnappi.Config, flowName string, flowtype string, ipA
 			udp.SrcPort().SetValue(srcPort)
 		} else {
 			v4.Src().Increment().SetStart(trafficSrcNetIPv4).SetCount(256)
-			v4.Dst().Increment().SetStart(ipAddr).SetCount(256)
+			v4.Dst().SetValue(ipAddr)
 			udp := flow.Packet().Add().Udp()
-			udp.DstPort().SetValue(dstport)
-			udp.SrcPort().SetValue(srcPort)
+			udp.DstPort().Increment().SetStart(dstport).SetCount(256)
+			udp.SrcPort().Increment().SetStart(srcPort).SetCount(256)
 		}
 		v4.Priority().Tos().Precedence().SetValue(uint32(tos >> 5))
 		v4.TimeToLive().SetValue(ttl)
@@ -388,7 +423,7 @@ func createFlow(otgConfig gosnappi.Config, flowName string, flowtype string, ipA
 			udp.SrcPort().SetValue(srcPort)
 		} else {
 			v6.Src().Increment().SetStart(trafficSrcNetIPv6).SetCount(256)
-			v6.Dst().Increment().SetStart(ipAddr).SetCount(256)
+			v6.Dst().SetValue(ipAddr)
 			udp := flow.Packet().Add().Udp()
 			udp.DstPort().Increment().SetStart(dstport).SetCount(256)
 			udp.SrcPort().Increment().SetStart(srcPort).SetCount(256)
@@ -423,7 +458,7 @@ func verifyTraffic(t *testing.T, dut *ondatra.DUTDevice, ate *ondatra.ATEDevice,
 		t.Fatal("ATE did not send any packets")
 	}
 
-	dutlossPct := (float64(txPkts) - float64(totalEgressPkts)) * 100 / float64(txPkts)
+	dutlossPct := math.Abs(float64(txPkts)-float64(totalEgressPkts)) * 100 / float64(txPkts)
 	if dutlossPct < tolerancePct {
 		t.Log("The packet count of traffic sent from ATE port1 equal to the sum of all packets on DUT egress ports")
 	} else {
@@ -447,9 +482,19 @@ func verifyTraffic(t *testing.T, dut *ondatra.DUTDevice, ate *ondatra.ATEDevice,
 		t.Logf("Packet loss is within tolerance: %f%%", lossPct)
 	}
 
+	if nextHopGroupPacketCounters(t, dut, totalRxPkts) {
+		t.Log("Next-hop group packet counters match")
+	} else {
+		t.Error("next-hop group packet counters mismatch")
+	}
+
 	lag1RxPkts = portRxPkts["port2"] + portRxPkts["port3"]
 	lag2RxPkts = portRxPkts["port4"] + portRxPkts["port5"]
 	t.Logf("LAG1 received %d packets, LAG2 received %d packets", lag1RxPkts, lag2RxPkts)
+	if totalRxPkts == 0 {
+		t.Errorf("ecmp hashing cannot be verified; all destination ports received 0 packets")
+		return
+	}
 	ecmpDiff := float64(lag1RxPkts) - float64(lag2RxPkts)
 	if ecmpDiff < 0 {
 		ecmpDiff = -ecmpDiff
@@ -461,11 +506,24 @@ func verifyTraffic(t *testing.T, dut *ondatra.DUTDevice, ate *ondatra.ATEDevice,
 		t.Logf("ECMP hashing between LAGs is balanced. Difference: %f%%", ecmpError*100)
 	}
 
-	if nextHopGroupPacketCounters(t, dut, totalRxPkts) {
-		t.Log("Next-hop group packet counters match")
-	} else {
-		t.Error("next-hop group packet counters mismatch")
+	verifyPortBalance(t, "LAG1 member", portRxPkts["port2"], portRxPkts["port3"])
+	verifyPortBalance(t, "LAG2 member", portRxPkts["port4"], portRxPkts["port5"])
+}
+
+func verifyPortBalance(t *testing.T, name string, port1RxPkts, port2RxPkts uint64) {
+	t.Helper()
+	totalRxPkts := port1RxPkts + port2RxPkts
+	if totalRxPkts == 0 {
+		t.Errorf("%s hashing cannot be verified; both member ports received 0 packets", name)
+		return
 	}
+	diff := math.Abs(float64(port1RxPkts) - float64(port2RxPkts))
+	errPct := diff / float64(totalRxPkts)
+	if errPct > tolerance {
+		t.Errorf("%s hashing is unbalanced. Difference: %f%%, want < %f%%", name, errPct*100, tolerance*100)
+		return
+	}
+	t.Logf("%s hashing is balanced. Difference: %f%%", name, errPct*100)
 }
 
 func enableCapture(t *testing.T, config gosnappi.Config, portNames []string) {
@@ -494,6 +552,63 @@ func stopCapture(t *testing.T, otg *otg.OTG, cs gosnappi.ControlState) {
 	otg.SetControlState(t, cs)
 }
 
+func waitForFlowComplete(t *testing.T, ate *ondatra.ATEDevice, flowName string) {
+	t.Helper()
+	flowOutPkts := gnmi.OTG().Flow(flowName).Counters().OutPkts().State()
+	watch := gnmi.Watch(t, ate.OTG(), flowOutPkts, 2*time.Minute, func(val *ygnmi.Value[uint64]) bool {
+		outPkts, ok := val.Val()
+		return ok && outPkts >= packetCount
+	})
+	if val, ok := watch.Await(t); !ok {
+		t.Fatalf("flow %s did not complete packet transmission: got %v, want >= %d", flowName, val, packetCount)
+	}
+	ate.OTG().StopTraffic(t)
+}
+
+func mostActiveRxPort(t *testing.T, ate *ondatra.ATEDevice, portNames []string) string {
+	t.Helper()
+	var activePort string
+	var maxRxPkts uint64
+	for _, portName := range portNames {
+		rxPkts := gnmi.Get(t, ate.OTG(), gnmi.OTG().Port(ate.Port(t, portName).ID()).Counters().InFrames().State())
+		if rxPkts > maxRxPkts {
+			activePort = portName
+			maxRxPkts = rxPkts
+		}
+	}
+	if activePort == "" {
+		t.Fatalf("no received traffic found on ports %v; cannot select capture port", portNames)
+	}
+	t.Logf("Selected %s for packet validation based on received packet count %d", activePort, maxRxPkts)
+	return activePort
+}
+
+func rerunFlowWithCapture(t *testing.T, bs *cfgplugins.BGPSession, flowName, portName string) {
+	t.Helper()
+	t.Logf("Re-running %s with capture enabled on %s", flowName, portName)
+	enableCapture(t, bs.ATETop, []string{portName})
+	bs.ATE.OTG().PushConfig(t, bs.ATETop)
+	bs.ATE.OTG().StartProtocols(t)
+	verifyDUTBGPEstablished(t, bs.DUT)
+	cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
+	cs := startCapture(t, bs.ATE.OTG())
+	bs.ATE.OTG().StartTraffic(t)
+	waitForFlowComplete(t, bs.ATE, flowName)
+	stopCapture(t, bs.ATE.OTG(), cs)
+}
+
+func packetValidationPorts(t *testing.T, bs *cfgplugins.BGPSession, flowName string, capturedPorts []string) []string {
+	t.Helper()
+	if bs.DUT.Vendor() != ondatra.CISCO {
+		return capturedPorts
+	}
+	activePort := mostActiveRxPort(t, bs.ATE, capturePorts)
+	if !containsString(capturedPorts, activePort) {
+		rerunFlowWithCapture(t, bs, flowName, activePort)
+	}
+	return []string{activePort}
+}
+
 func mustProcessCapture(t *testing.T, otg *otg.OTG, port string) string {
 	bytes := otg.GetCapture(t, gosnappi.NewCaptureRequest().SetPortName(port))
 	time.Sleep(30 * time.Second)
@@ -510,6 +625,7 @@ func mustProcessCapture(t *testing.T, otg *otg.OTG, port string) string {
 }
 
 func validatePackets(t *testing.T, filename string, protocolType string, outertos, innertos string, outerttl, innerttl uint8, outerPacket bool) {
+	var guePacketCount uint32 = 0
 
 	handle, err := pcap.OpenOffline(filename)
 	if err != nil {
@@ -532,64 +648,63 @@ func validatePackets(t *testing.T, filename string, protocolType string, outerto
 		udpLayer := packet.Layer(layers.LayerTypeUDP)
 		udp, ok := udpLayer.(*layers.UDP)
 		if !ok || udp == nil {
-			t.Error("gue layer not found")
-			return
-		} else {
-			if udp.DstPort == gueProtocolPort {
-				t.Log("Got the encapsulated GUE layer")
-			}
-
-			if outerPacket {
-				validateOuterPacket(t, ipOuterLayer, outertos, outerttl)
-			}
-
-			var gotInnerPacketTOS, gotInnerttl uint8
-			dscp := ""
-
-			switch protocolType {
-			case "ipv4":
-				innerPacket := gopacket.NewPacket(udp.Payload, layers.LayerTypeIPv4, gopacket.Default)
-				ipLayer := innerPacket.Layer(layers.LayerTypeIPv4)
-				if ipLayer == nil {
-					t.Errorf("inner layer of type %s not found", protocolType)
-					return
-				}
-				ip, _ := ipLayer.(*layers.IPv4)
-				gotInnerPacketTOS = ip.TOS
-				dscp = fmt.Sprintf("0x%X", gotInnerPacketTOS)
-				gotInnerttl = ip.TTL
-			case "ipv6":
-				innerPacket := gopacket.NewPacket(udp.Payload, layers.LayerTypeIPv6, gopacket.Default)
-				ipLayer := innerPacket.Layer(layers.LayerTypeIPv6)
-				if ipLayer == nil {
-					t.Errorf("inner layer of type %s not found", protocolType)
-					return
-				}
-				ip, _ := ipLayer.(*layers.IPv6)
-				gotInnerPacketTOS = ip.TrafficClass
-				dscp = fmt.Sprintf("0x%X", gotInnerPacketTOS)
-				gotInnerttl = ip.HopLimit
-			}
-
-			if innerttl != 0 {
-				if innerttl == gotInnerttl {
-					t.Logf("TTL matched: expected ttl %d, got ttl %d", innerttl, gotInnerttl)
-				} else {
-					t.Errorf("ttl mismatch: expected ttl %d, got ttl %d", innerttl, gotInnerttl)
-				}
-			}
-			if innertos != "" {
-				if dscp == innertos {
-					t.Logf("TOS matched: expected TOS %v, got TOS %v", innertos, dscp)
-				} else {
-					t.Errorf("tos mismatch: expected TOS %v, got TOS %v", innertos, dscp)
-				}
-			}
-
+			continue
 		}
-		break
-	}
+		if udp.DstPort != gueProtocolPort {
+			continue
+		}
+		guePacketCount++
 
+		if outerPacket {
+			validateOuterPacket(t, ipOuterLayer, outertos, outerttl)
+		}
+
+		var gotInnerPacketTOS, gotInnerttl uint8
+		dscp := ""
+
+		switch protocolType {
+		case "ipv4":
+			innerPacket := gopacket.NewPacket(udp.Payload, layers.LayerTypeIPv4, gopacket.Default)
+			ipLayer := innerPacket.Layer(layers.LayerTypeIPv4)
+			if ipLayer == nil {
+				t.Errorf("inner layer of type %s not found", protocolType)
+				return
+			}
+			ip, _ := ipLayer.(*layers.IPv4)
+			gotInnerPacketTOS = ip.TOS
+			dscp = fmt.Sprintf("0x%X", gotInnerPacketTOS)
+			gotInnerttl = ip.TTL
+		case "ipv6":
+			innerPacket := gopacket.NewPacket(udp.Payload, layers.LayerTypeIPv6, gopacket.Default)
+			ipLayer := innerPacket.Layer(layers.LayerTypeIPv6)
+			if ipLayer == nil {
+				t.Errorf("inner layer of type %s not found", protocolType)
+				return
+			}
+			ip, _ := ipLayer.(*layers.IPv6)
+			gotInnerPacketTOS = ip.TrafficClass
+			dscp = fmt.Sprintf("0x%X", gotInnerPacketTOS)
+			gotInnerttl = ip.HopLimit
+		}
+
+		if innerttl != 0 {
+			if innerttl == gotInnerttl {
+				t.Logf("TTL matched: expected ttl %d, got ttl %d", innerttl, gotInnerttl)
+			} else {
+				t.Errorf("ttl mismatch: expected ttl %d, got ttl %d", innerttl, gotInnerttl)
+			}
+		}
+		if innertos != "" {
+			if dscp == innertos {
+				t.Logf("TOS matched: expected TOS %v, got TOS %v", innertos, dscp)
+			} else {
+				t.Errorf("tos mismatch: expected TOS %v, got TOS %v", innertos, dscp)
+			}
+		}
+	}
+	if guePacketCount == 0 {
+		t.Errorf("no GUE-encapsulated packets found in capture %s", filename)
+	}
 }
 
 func validateOuterPacket(t *testing.T, outerPacket *layers.IPv6, tos string, ttl uint8) {
@@ -630,11 +745,12 @@ func verifySinglePathTraffic(t *testing.T, ate *ondatra.ATEDevice, config gosnap
 	rxPortNames := []string{"port2", "port3", "port4", "port5"}
 	var totalRxPkts uint64
 	var activePorts []string
+	activeThreshold := uint64(float64(txPkts) * tolerance)
 
 	for _, portName := range rxPortNames {
 		rxPkts := gnmi.Get(t, otg, gnmi.OTG().Port(ate.Port(t, portName).ID()).Counters().InFrames().State())
 		totalRxPkts += rxPkts
-		if rxPkts >= packetCount {
+		if rxPkts > activeThreshold {
 			activePorts = append(activePorts, portName)
 		}
 	}
@@ -677,7 +793,7 @@ func verifyTTLDropAndICMP(t *testing.T, ate *ondatra.ATEDevice, config gosnappi.
 		totalRxPkts += rxPkts
 	}
 
-	if totalRxPkts >= packetCount {
+	if totalRxPkts != 0 {
 		t.Errorf("received %d packets on destination ports, but expected 0 due to TTL expiry", totalRxPkts)
 	} else {
 		t.Logf("Successfully verified that no packets for flow %s were received at the GUE destinations", flowname)
@@ -689,6 +805,7 @@ func verifyTTLDropAndICMP(t *testing.T, ate *ondatra.ATEDevice, config gosnappi.
 	}
 	defer handle.Close()
 
+	foundTimeExceeded := false
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
 		ipv6Layer := packet.Layer(layers.LayerTypeIPv6)
@@ -696,13 +813,17 @@ func verifyTTLDropAndICMP(t *testing.T, ate *ondatra.ATEDevice, config gosnappi.
 			icmpv6Layer := packet.Layer(layers.LayerTypeICMPv6)
 			if icmpv6Layer != nil {
 				icmpPacket, _ := icmpv6Layer.(*layers.ICMPv6)
-				if icmpPacket.TypeCode.Type() == layers.ICMPv6TypeRouterAdvertisement && icmpPacket.TypeCode.Code() == 0 {
-					t.Log("PASS: received ICMPv6 code-0")
+				if icmpPacket.TypeCode.Type() == layers.ICMPv6TypeTimeExceeded && icmpPacket.TypeCode.Code() == 0 {
+					foundTimeExceeded = true
+					t.Log("PASS: received ICMPv6 Time Exceeded code 0")
 				} else {
-					t.Errorf("did not received ICMPv6 code-0, Got Code: %v , type: %v", icmpPacket.TypeCode.Code(), icmpPacket.TypeCode.Type())
+					t.Errorf("did not receive ICMPv6 Time Exceeded code 0, got code %v, type %v", icmpPacket.TypeCode.Code(), icmpPacket.TypeCode.Type())
 				}
 			}
 		}
+	}
+	if !foundTimeExceeded {
+		t.Errorf("did not receive ICMPv6 Time Exceeded code 0")
 	}
 }
 
@@ -743,34 +864,102 @@ func nextHopGroupPacketCounters(t *testing.T, dut *ondatra.DUTDevice, totalRxPkt
 	return false
 }
 
+func configureGlobalBGPCli(t *testing.T, bs *cfgplugins.BGPSession) {
+	t.Helper()
+	if bs.DUT.Vendor() != ondatra.CISCO {
+		t.Fatalf("Global BGP CLI configuration is only implemented for Cisco, got %v", bs.DUT.Vendor())
+	}
+	helpers.GnmiCLIConfig(t, bs.DUT, fmt.Sprintf(`
+router bgp %d
+ bgp router-id 192.0.2.1
+ bgp bestpath as-path multipath-relax
+ address-family ipv4 unicast
+  maximum-paths eibgp 64
+  additional-paths receive
+  bgp attribute-download
+ !
+ address-family ipv6 unicast
+  maximum-paths eibgp 64
+  additional-paths receive
+  bgp attribute-download
+ !
+ neighbor-group %s
+  address-family ipv4 unicast
+   route-policy %s in
+   route-policy %s out
+  !
+  address-family ipv6 unicast
+   route-policy %s in
+   route-policy %s out
+  !
+ !
+ neighbor %s
+  remote-as %d
+  use neighbor-group %s
+  address-family ipv4 unicast
+  !
+  address-family ipv6 unicast
+  !
+ !
+!`, cfgplugins.DutAS, cfgplugins.BGPPeerGroup1, cfgplugins.RPLPermitAll, cfgplugins.RPLPermitAll, cfgplugins.RPLPermitAll, cfgplugins.RPLPermitAll, atePort1.IPv6, cfgplugins.DutAS, cfgplugins.BGPPeerGroup1))
+}
+
+func verifyDUTBGPEstablished(t *testing.T, dut *ondatra.DUTDevice) {
+	t.Helper()
+	if dut.Vendor() != ondatra.CISCO {
+		cfgplugins.VerifyDUTBGPEstablished(t, dut)
+		return
+	}
+	nSessionState := gnmi.OC().NetworkInstance(deviations.DefaultNetworkInstance(dut)).Protocol(cfgplugins.PTBGP, "default").Bgp().NeighborAny().SessionState().State()
+	watch := gnmi.WatchAll(t, dut, nSessionState, 2*time.Minute, func(val *ygnmi.Value[oc.E_Bgp_Neighbor_SessionState]) bool {
+		state, ok := val.Val()
+		return ok && state == oc.Bgp_Neighbor_SessionState_ESTABLISHED
+	})
+	if val, ok := watch.Await(t); !ok {
+		t.Fatalf("DUT global BGP sessions not established: got %v", val)
+	}
+	t.Log("DUT global BGP sessions established")
+}
+
+func removeOCBGPProtocol(t *testing.T, bs *cfgplugins.BGPSession) {
+	t.Helper()
+	ni := bs.DUTConf.GetOrCreateNetworkInstance(deviations.DefaultNetworkInstance(bs.DUT))
+	ni.DeleteProtocol(cfgplugins.PTBGP, "BGP")
+	if len(ni.Protocol) == 0 {
+		ni.Protocol = nil
+	}
+}
+
 func TestGUEEncap(t *testing.T) {
 	cfgplugins.SetPortAttr([]string{"port1"}, dutPort1, atePort1)
 	bs := cfgplugins.NewBGPSession(t, cfgplugins.PortCount1, nil)
-	bs.WithEBGP(t, []oc.E_BgpTypes_AFI_SAFI_TYPE{oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST}, []string{"port1"}, true, true)
+	bs.WithIBGP(t, []oc.E_BgpTypes_AFI_SAFI_TYPE{oc.BgpTypes_AFI_SAFI_TYPE_IPV6_UNICAST}, []string{"port1"}, true)
+	removeOCBGPProtocol(t, bs)
 
 	configureHardwareInit(t, bs.DUT)
 
 	mustConfigureDUT(t, bs.DUT)
-	dutPort1Mac = gnmi.Get(t, bs.DUT, gnmi.OC().Interface(bs.DUT.Port(t, "port1").Name()).Ethernet().MacAddress().State())
 
 	configureATE(t, bs)
 
 	if err := bs.PushDUT(t); err != nil {
 		t.Error(err)
 	}
+	configureGlobalBGPCli(t, bs)
 
 	t.Run("RT-3.53.1: IPv4 GUE Encap without explicit ToS/TTL", func(t *testing.T) {
 
 		createFlow(bs.ATETop, "IPv4-GUE-Traffic", "ipv4", trafficDstNetIPv4, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -779,6 +968,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv4-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -789,9 +979,9 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv4-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv4-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv4", "0x80", "0x80", 64, 9, true)
+			validatePackets(t, capture, "ipv4", "0x80", "0x80", 9, 9, true)
 		}
 
 	})
@@ -800,13 +990,14 @@ func TestGUEEncap(t *testing.T) {
 
 		createFlow(bs.ATETop, "IPv6-GUE-Traffic", "ipv6", trafficDstNetIPv6, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -815,6 +1006,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv6-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -825,9 +1017,9 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv6-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv6-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv6", "0x80", "0x80", 64, 9, false)
+			validatePackets(t, capture, "ipv6", "0x80", "0x80", 9, 9, true)
 		}
 
 	})
@@ -844,18 +1036,20 @@ func TestGUEEncap(t *testing.T) {
 				deleteTtl:        false,
 				protocolType:     "V4Udp",
 				nexthopGroupName: nexthopGroupName,
+				index:            "0",
 			})
 
 		createFlow(bs.ATETop, "IPv4-GUE-Traffic", "ipv4", trafficDstNetIPv4, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 		t.Logf("Starting capture")
@@ -863,6 +1057,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv4-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -873,18 +1068,23 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv4-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv4-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv4", "", "0x60", 0, 0, false)
+			validatePackets(t, capture, "ipv4", "0x60", "0x80", 9, 9, true)
 		}
 	})
 
-	// Set the ToS on the packets from ATE and have the DUT copy it to the outer ToS field
 	t.Run("RT-3.53.4: IPv6 GUE Encap with explicit ToS", func(t *testing.T) {
-		// Configure TOS on ATE, and validate the TOS is copied by DUT on outer header
-		createFlow(bs.ATETop, "IPv6-GUE-Traffic", "ipv6", trafficDstNetIPv6, 0x60, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
+		configureTosTtlOnTunnel(t, bs.DUT, &tunnelCfg{
+			protocolType:     "V6Udp",
+			nexthopGroupName: nexthopGroupNameV6,
+			index:            "1",
+			tos:              0x60,
+		})
+		createFlow(bs.ATETop, "IPv6-GUE-Traffic", "ipv6", trafficDstNetIPv6, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
@@ -894,6 +1094,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv6-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -904,9 +1105,9 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv6-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv6-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv6", "", "0x60", 0, 0, false)
+			validatePackets(t, capture, "ipv6", "0x60", "0x80", 9, 9, true)
 		}
 	})
 
@@ -925,14 +1126,15 @@ func TestGUEEncap(t *testing.T) {
 
 		createFlow(bs.ATETop, "IPv4-GUE-Traffic", "ipv4", trafficDstNetIPv4, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -941,6 +1143,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv4-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -951,9 +1154,9 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv4-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv4-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv4", "", "", 20, 0, true)
+			validatePackets(t, capture, "ipv4", "0x80", "0x80", 20, 9, true)
 		}
 	})
 
@@ -969,13 +1172,14 @@ func TestGUEEncap(t *testing.T) {
 				index:            "1",
 			})
 		createFlow(bs.ATETop, "IPv6-GUE-Traffic", "ipv6", trafficDstNetIPv6, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -984,6 +1188,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv6-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -994,9 +1199,9 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv6-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv6-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv6", "", "", 20, 0, true)
+			validatePackets(t, capture, "ipv6", "0x80", "0x80", 20, 9, true)
 		}
 	})
 
@@ -1011,16 +1216,17 @@ func TestGUEEncap(t *testing.T) {
 				deleteTtl:        false,
 				index:            "0",
 			})
-		createFlow(bs.ATETop, "IPv4-GUE-Traffic", "ipv4", trafficDstNetIPv4, 0x60, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
+		createFlow(bs.ATETop, "IPv4-GUE-Traffic", "ipv4", trafficDstNetIPv4, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 		t.Log("Starting capture")
@@ -1028,6 +1234,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv4-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -1038,9 +1245,9 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv4-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv4-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv4", "0x60", "", 20, 0, true)
+			validatePackets(t, capture, "ipv4", "0x60", "0x80", 20, 9, true)
 		}
 	})
 
@@ -1055,9 +1262,10 @@ func TestGUEEncap(t *testing.T) {
 				deleteTtl:        false,
 				index:            "1",
 			})
-		createFlow(bs.ATETop, "IPv6-GUE-Traffic", "ipv6", trafficDstNetIPv6, 0x60, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
+		createFlow(bs.ATETop, "IPv6-GUE-Traffic", "ipv6", trafficDstNetIPv6, 0x80, 10, false, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
@@ -1066,6 +1274,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv6-GUE-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -1076,9 +1285,9 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		verifyTraffic(t, bs.DUT, bs.ATE, bs.ATETop, "IPv6-GUE-Traffic")
 
-		for _, p := range capturePorts {
+		for _, p := range packetValidationPorts(t, bs, "IPv6-GUE-Traffic", portsForCapture) {
 			capture := mustProcessCapture(t, bs.ATE.OTG(), p)
-			validatePackets(t, capture, "ipv6", "0x60", "", 20, 0, true)
+			validatePackets(t, capture, "ipv6", "0x60", "0x80", 20, 9, true)
 		}
 	})
 
@@ -1096,13 +1305,14 @@ func TestGUEEncap(t *testing.T) {
 			})
 		createFlow(bs.ATETop, "IPv4-GUE-Single-Traffic", "ipv4", trafficDstNetIPv4, 0x80, 10, true, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -1111,6 +1321,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv4-GUE-Single-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -1121,8 +1332,21 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		activeport := verifySinglePathTraffic(t, bs.ATE, bs.ATETop, "IPv4-GUE-Single-Traffic")
 
+		if len(activeport) == 0 {
+			t.Fatalf("no active egress port found; cannot validate capture")
+		}
+		if !containsString(portsForCapture, activeport[0]) {
+			t.Logf("Re-running traffic with capture enabled on active egress port %s", activeport[0])
+			enableCapture(t, bs.ATETop, []string{activeport[0]})
+			bs.ATE.OTG().PushConfig(t, bs.ATETop)
+			bs.ATE.OTG().StartProtocols(t)
+			cs := startCapture(t, bs.ATE.OTG())
+			bs.ATE.OTG().StartTraffic(t)
+			waitForFlowComplete(t, bs.ATE, "IPv4-GUE-Single-Traffic")
+			stopCapture(t, bs.ATE.OTG(), cs)
+		}
 		capture := mustProcessCapture(t, bs.ATE.OTG(), activeport[0])
-		validatePackets(t, capture, "ipv4", "0x80", "0x80", 64, 9, true)
+		validatePackets(t, capture, "ipv4", "0x80", "0x80", 9, 9, true)
 
 	})
 
@@ -1139,13 +1363,14 @@ func TestGUEEncap(t *testing.T) {
 			})
 		createFlow(bs.ATETop, "IPv6-GUE-Single-Traffic", "ipv6", trafficDstNetIPv6, 0x80, 10, true, gueProtocolPort, gueSrcProtocolPort, false)
 
-		enableCapture(t, bs.ATETop, capturePorts)
+		portsForCapture := capturePortsForDUT(t, bs.DUT, capturePorts)
+		enableCapture(t, bs.ATETop, portsForCapture)
 		bs.ATE.OTG().PushConfig(t, bs.ATETop)
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -1154,6 +1379,7 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting traffic")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv6-GUE-Single-Traffic")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
@@ -1164,8 +1390,21 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Verify traffic packets")
 		activeport := verifySinglePathTraffic(t, bs.ATE, bs.ATETop, "IPv6-GUE-Single-Traffic")
 
+		if len(activeport) == 0 {
+			t.Fatalf("no active egress port found; cannot validate capture")
+		}
+		if !containsString(portsForCapture, activeport[0]) {
+			t.Logf("Re-running traffic with capture enabled on active egress port %s", activeport[0])
+			enableCapture(t, bs.ATETop, []string{activeport[0]})
+			bs.ATE.OTG().PushConfig(t, bs.ATETop)
+			bs.ATE.OTG().StartProtocols(t)
+			cs := startCapture(t, bs.ATE.OTG())
+			bs.ATE.OTG().StartTraffic(t)
+			waitForFlowComplete(t, bs.ATE, "IPv6-GUE-Single-Traffic")
+			stopCapture(t, bs.ATE.OTG(), cs)
+		}
 		capture := mustProcessCapture(t, bs.ATE.OTG(), activeport[0])
-		validatePackets(t, capture, "ipv6", "0x80", "0x80", 64, 9, true)
+		validatePackets(t, capture, "ipv6", "0x80", "0x80", 9, 9, true)
 
 	})
 
@@ -1177,7 +1416,7 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -1185,11 +1424,11 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting TTL=1 traffic test")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv4-GUE-ttl")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
 
-		time.Sleep(20 * time.Second)
 		stopCapture(t, bs.ATE.OTG(), cs)
 		captureName := mustProcessCapture(t, bs.ATE.OTG(), "port1")
 
@@ -1206,7 +1445,7 @@ func TestGUEEncap(t *testing.T) {
 		t.Log("Start ATE protocols and verify BGP session")
 		bs.ATE.OTG().StartProtocols(t)
 		t.Log("Verify DUT BGP sessions up")
-		cfgplugins.VerifyDUTBGPEstablished(t, bs.DUT)
+		verifyDUTBGPEstablished(t, bs.DUT)
 		t.Log("Verify OTG BGP sessions up")
 		cfgplugins.VerifyOTGBGPEstablished(t, bs.ATE)
 
@@ -1214,11 +1453,11 @@ func TestGUEEncap(t *testing.T) {
 
 		t.Log("Starting TTL=1 traffic test")
 		bs.ATE.OTG().StartTraffic(t)
+		waitForFlowComplete(t, bs.ATE, "IPv6-GUE-ttl")
 
 		otgutils.LogPortMetrics(t, bs.ATE.OTG(), bs.ATETop)
 		otgutils.LogFlowMetrics(t, bs.ATE.OTG(), bs.ATETop)
 
-		time.Sleep(20 * time.Second)
 		stopCapture(t, bs.ATE.OTG(), cs)
 		captureName := mustProcessCapture(t, bs.ATE.OTG(), "port1")
 
