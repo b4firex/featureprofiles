@@ -37,6 +37,7 @@ type StaticRouteCfg struct {
 	NextNetworkInstance string // Egress network instance for cross-VRF routing (e.g. egress-vrf)
 	IPType              string
 	NextHopAddr         string
+	SourceIP            string
 	NexthopGroup        bool
 	NexthopGroupName    string
 	Metric              uint32
@@ -100,6 +101,17 @@ func NewStaticRouteCfg(batch *gnmi.SetBatch, cfg *StaticRouteCfg, d *ondatra.DUT
 					staticRouteToNextHopGroupCLI(cfg.T, d, *cfg)
 					cliConfigured = true
 				}
+			case ondatra.CISCO:
+				if cfg.NextHopAddr == "" || cfg.SourceIP == "" {
+					return s, fmt.Errorf("NextHopAddr and SourceIP must be set for Cisco static GUE route config")
+				}
+				cli := fmt.Sprintf(`
+					router static
+					address-family ipv6 unicast
+					%s remote-next-hop %s tunnel gue-v1 source-ip %s
+				`, cfg.Prefix, cfg.NextHopAddr, cfg.SourceIP)
+				helpers.GnmiCLIConfig(cfg.T, d, cli)
+				cliConfigured = true
 			default:
 				return s, fmt.Errorf("deviation StaticRouteToNHGOCUnsupported is not handled for the dut: %s", d.Vendor())
 			}
