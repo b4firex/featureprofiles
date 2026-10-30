@@ -1634,6 +1634,12 @@ func PushDUTHardwareInitConfig(t *testing.T, dut *ondatra.DUTDevice, hardwareIni
 func ConfigureLoadbalance(t *testing.T, dut *ondatra.DUTDevice) {
 	t.Helper()
 	switch dut.Vendor() {
+	case ondatra.CISCO:
+		if deviations.LoadBalancePolicyOCUnsupported(dut) {
+			t.Log("Skipping load-balance policy configuration for Cisco due to deviation LoadBalancePolicyOCUnsupported.")
+		} else {
+			t.Fatalf("Load-balance policy OC configuration is not implemented for vendor: %v", dut.Vendor())
+		}
 	case ondatra.ARISTA:
 		if deviations.LoadBalancePolicyOCUnsupported(dut) {
 			loadBalanceCliConfig := `
